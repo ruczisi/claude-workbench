@@ -1,0 +1,111 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1778209205991,
+  "projectRoot": "F:\\claude-workbench\\src-tauri",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Rust",
+        "version": "1.77.2",
+        "confidence": "high",
+        "markers": [
+          "Cargo.toml"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "cargo",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy",
+    "devCommand": "cargo run",
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "src"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "capabilities": {
+      "path": "capabilities",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1778209205972,
+      "keyFiles": [
+        "default.json"
+      ]
+    },
+    "gen": {
+      "path": "gen",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1778209205972,
+      "keyFiles": []
+    },
+    "icons": {
+      "path": "icons",
+      "purpose": null,
+      "fileCount": 16,
+      "lastAccessed": 1778209205973,
+      "keyFiles": [
+        "128x128.png",
+        "128x128@2x.png",
+        "32x32.png",
+        "icon.icns",
+        "icon.ico"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 1,
+      "lastAccessed": 1778209205973,
+      "keyFiles": [
+        "main.rs"
+      ]
+    },
+    "target": {
+      "path": "target",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1778209205974,
+      "keyFiles": [
+        "CACHEDIR.TAG"
+      ]
+    },
+    "gen\\schemas": {
+      "path": "gen\\schemas",
+      "purpose": "Schema definitions",
+      "fileCount": 4,
+      "lastAccessed": 1778209205974,
+      "keyFiles": [
+        "acl-manifests.json",
+        "capabilities.json",
+        "desktop-schema.json"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "tauri.conf.json",
+      "accessCount": 1,
+      "lastAccessed": 1778209259370,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

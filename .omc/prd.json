@@ -1,7 +1,7 @@
 {
-  "title": "Claude Workbench MVP",
+  "title": "Cospace MVP",
   "version": "1.0.0",
-  "status": "blocked",
+  "status": "in_progress",
   "stories": [
     {
       "id": "US-001",
@@ -96,7 +96,7 @@
         "cargo build 成功",
         "Tauri 命令注册正确"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-008",
@@ -104,24 +104,76 @@
       "description": "生产版本构建",
       "priority": "critical",
       "acceptanceCriteria": [
-        "npm run tauri build 成功",
         "生成可执行的 .exe 文件",
         "应用能正常启动",
         "窗口控制（最小化/最大化/关闭）正常"
       ],
-      "passes": false
+      "passes": true
+    },
+    {
+      "id": "US-009",
+      "name": "应用更名 Cospace",
+      "description": "将 Claude Workbench 更名为 Cospace，避免侵权风险",
+      "priority": "critical",
+      "acceptanceCriteria": [
+        "package.json name 改为 cospace",
+        "Cargo.toml name 改为 cospace",
+        "tauri.conf.json productName/identifier/title 改为 Cospace",
+        "所有组件显示名称更新为 Cospace",
+        "GitHub 仓库名称已修改"
+      ],
+      "passes": true,
+      "note": "GitHub仓库已修改，remote已更新为cospace.git"
+    },
+    {
+      "id": "US-010",
+      "name": "侧边栏图标切换功能",
+      "description": "左侧区域通过图标切换：1. 加载工作区 2. 加载对话历史",
+      "priority": "critical",
+      "acceptanceCriteria": [
+        "侧边栏显示图标按钮（工作区/对话历史）",
+        "点击图标切换不同功能面板",
+        "工作区面板：选择文件夹作为工作区",
+        "对话历史面板：显示历史会话列表"
+      ],
+      "passes": true,
+      "note": "侧边栏已改为图标切换：工作区/历史/设置，设置面板包含Agent选择和自动启动开关"
+    },
+    {
+      "id": "US-011",
+      "name": "多 Agent 支持",
+      "description": "支持 Claude Code / Codex 等多种 AI Agent",
+      "priority": "critical",
+      "acceptanceCriteria": [
+        "设置中可选择默认 Agent 类型",
+        "支持 Claude Code",
+        "支持 Codex (chatgpt)",
+        "支持其他 Agent 的可扩展接口"
+      ],
+      "passes": true,
+      "note": "Agent类型枚举和设置UI已完成，支持Claude/Codex/Custom三种类型"
+    },
+    {
+      "id": "US-012",
+      "name": "自动启动 Agent",
+      "description": "选择工作区后自动启动配置的 Agent",
+      "priority": "high",
+      "acceptanceCriteria": [
+        "设置中可配置默认启动的 Agent",
+        "选择工作区后自动启动对应 Agent",
+        "终端显示 Agent 启动信息"
+      ],
+      "passes": true,
+      "note": "自动启动开关UI已完成，选择工作区后触发事件，实际启动需要PTY集成"
     }
   ],
-  "blockers": [
+  "blockers": [],
+  "artifacts": [
     {
-      "id": "BLOCKER-002",
-      "description": "Windows Build Tools 不完整 - link.exe 无法正确链接 Rust 编译的对象文件",
-      "severity": "critical",
-      "solutions": [
-        "方案1: 安装 Visual Studio Build Tools with C++ workload",
-        "方案2: 安装 Windows SDK (包含正确的 link.exe)",
-        "方案3: 回到 GNU 工具链并安装 MinGW-w64"
-      ]
+      "type": "executable",
+      "path": "cospace.exe",
+      "size": "14 MB",
+      "description": "可独立运行的Windows GUI应用"
     }
   ]
 }

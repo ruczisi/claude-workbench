@@ -253,6 +253,8 @@ async fn start_agent(
 
     // 使用传入的 command 路径（绝对路径），否则回退到 executable_name
     let executable = config.command.unwrap_or_else(|| config.agent_type.executable_name().to_string());
+    log::info!("[Cospace] Starting agent: executable={}", executable);
+
     let mut cmd = CommandBuilder::new(executable);
 
     if let Some(working_dir) = config.working_dir {
@@ -265,7 +267,12 @@ async fn start_agent(
         }
     }
 
-    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let child = pair.slave.spawn_command(cmd).map_err(|e| {
+        log::error!("[Cospace] Failed to spawn agent: {}", e);
+        e.to_string()
+    })?;
+
+    log::info!("[Cospace] Agent child process spawned successfully");
 
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;

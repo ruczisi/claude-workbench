@@ -1,0 +1,250 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1778201777799,
+  "projectRoot": "F:\\claude-workbench",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "react",
+        "version": "19.2.6",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "19.2.6",
+        "category": "frontend"
+      },
+      {
+        "name": "vite",
+        "version": "5.4.21",
+        "category": "build"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "vite",
+      "build": "tsc && vite build",
+      "preview": "vite preview",
+      "tauri": "tauri"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": "type-based"
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "src"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 1,
+      "lastAccessed": 1778201777776,
+      "keyFiles": [
+        "index.html"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 0,
+      "lastAccessed": 1778201777776,
+      "keyFiles": []
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 4,
+      "lastAccessed": 1778201777783,
+      "keyFiles": [
+        "App.tsx",
+        "index.css",
+        "main.tsx",
+        "vite-env.d.ts"
+      ]
+    },
+    "src-tauri": {
+      "path": "src-tauri",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1778201777783,
+      "keyFiles": [
+        "build.rs",
+        "Cargo.lock",
+        "Cargo.toml",
+        "tauri.conf.json"
+      ]
+    },
+    "dist\\assets": {
+      "path": "dist\\assets",
+      "purpose": "Static assets",
+      "fileCount": 2,
+      "lastAccessed": 1778201777784,
+      "keyFiles": [
+        "index-CaduQHVy.css",
+        "index-DJvfBdN_.js"
+      ]
+    },
+    "src\\components": {
+      "path": "src\\components",
+      "purpose": "UI components",
+      "fileCount": 4,
+      "lastAccessed": 1778201777784,
+      "keyFiles": [
+        "Preview.tsx",
+        "Sidebar.tsx",
+        "StatusBar.tsx"
+      ]
+    },
+    "src-tauri\\src": {
+      "path": "src-tauri\\src",
+      "purpose": "Source code",
+      "fileCount": 2,
+      "lastAccessed": 1778201777784,
+      "keyFiles": [
+        "lib.rs",
+        "main.rs"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src-tauri\\src\\main.rs",
+      "accessCount": 21,
+      "lastAccessed": 1778223230415,
+      "type": "file"
+    },
+    {
+      "path": "src\\stores\\appStore.ts",
+      "accessCount": 19,
+      "lastAccessed": 1778223639303,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri\\Cargo.toml",
+      "accessCount": 10,
+      "lastAccessed": 1778223234268,
+      "type": "file"
+    },
+    {
+      "path": "src\\components\\Sidebar.tsx",
+      "accessCount": 9,
+      "lastAccessed": 1778223486115,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 7,
+      "lastAccessed": 1778220343125,
+      "type": "directory"
+    },
+    {
+      "path": "src\\components\\Terminal.tsx",
+      "accessCount": 6,
+      "lastAccessed": 1778223606681,
+      "type": "file"
+    },
+    {
+      "path": "docs\\superpowers\\plans\\2026-05-08-cospace-agent-integration-plan.md",
+      "accessCount": 4,
+      "lastAccessed": 1778222300174,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 2,
+      "lastAccessed": 1778220330579,
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "accessCount": 2,
+      "lastAccessed": 1778224546198,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri\\src\\lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1778203550802,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri\\tauri.conf.json",
+      "accessCount": 1,
+      "lastAccessed": 1778220339017,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri\\src",
+      "accessCount": 1,
+      "lastAccessed": 1778220440946,
+      "type": "directory"
+    },
+    {
+      "path": "src",
+      "accessCount": 1,
+      "lastAccessed": 1778220954279,
+      "type": "directory"
+    },
+    {
+      "path": "src\\App.tsx",
+      "accessCount": 1,
+      "lastAccessed": 1778220965151,
+      "type": "file"
+    },
+    {
+      "path": "src\\components\\Preview.tsx",
+      "accessCount": 1,
+      "lastAccessed": 1778220965221,
+      "type": "file"
+    },
+    {
+      "path": "docs\\superpowers\\specs\\2026-05-08-cospace-agent-integration-design.md",
+      "accessCount": 1,
+      "lastAccessed": 1778222003848,
+      "type": "file"
+    },
+    {
+      "path": "src\\services\\agentService.ts",
+      "accessCount": 1,
+      "lastAccessed": 1778223237522,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
