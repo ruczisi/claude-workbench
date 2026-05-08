@@ -35,16 +35,26 @@ export default function Sidebar({ theme, onToggleTheme }: SidebarProps) {
         await invoke('start_file_watcher', { path: selected });
         // 如果开启了自动启动，启动 Agent
         if (autoStartAgent) {
+          console.log('[Cospace] autoStartAgent enabled, finding agent:', activeAgent);
           const agentPath = await findAgentInPath(activeAgent);
+          console.log('[Cospace] agentPath found:', agentPath);
           if (agentPath) {
-            await startAgent({
-              agent_type: activeAgent,
-              command: agentPath,
-              args: [],
-              cwd: selected,
-            });
-            useAppStore.getState().setAgentPath(agentPath);
-            useAppStore.getState().setAgentStatus('running');
+            console.log('[Cospace] starting agent with path:', agentPath);
+            try {
+              await startAgent({
+                agent_type: activeAgent,
+                command: agentPath,
+                args: [],
+                cwd: selected,
+              });
+              useAppStore.getState().setAgentPath(agentPath);
+              useAppStore.getState().setAgentStatus('running');
+              console.log('[Cospace] agent started successfully');
+            } catch (err) {
+              console.error('[Cospace] startAgent error:', err);
+            }
+          } else {
+            console.warn('[Cospace] agent not found in path, activeAgent:', activeAgent);
           }
         }
       }

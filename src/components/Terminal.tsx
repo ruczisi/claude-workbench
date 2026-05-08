@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { onAgentOutput } from '../services/agentService';
+import { onAgentOutput, writeToAgent } from '../services/agentService';
 
 export default function Terminal() {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -77,10 +77,17 @@ export default function Terminal() {
     let unlistenAgentOutput: (() => void) | null = null;
     onAgentOutput((line) => {
       if (xtermRef.current) {
-        xtermRef.current.writeln(line);
+        xtermRef.current.write(line);
       }
     }).then((unlisten) => {
       unlistenAgentOutput = unlisten;
+    });
+
+    // Send keyboard input to agent
+    xterm.onData((data) => {
+      writeToAgent(data).catch(() => {
+        // Agent not running, ignore
+      });
     });
 
     return () => {

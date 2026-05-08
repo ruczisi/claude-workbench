@@ -28,6 +28,10 @@ export async function getAgentStatus(): Promise<AgentStatus> {
   return invoke('get_agent_status');
 }
 
+export async function writeToAgent(data: string): Promise<void> {
+  return invoke('write_to_agent', { data });
+}
+
 export function onAgentOutput(callback: (line: string) => void): Promise<UnlistenFn> {
   return listen<string>('agent-output', (event) => {
     callback(event.payload);

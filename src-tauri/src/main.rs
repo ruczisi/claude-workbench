@@ -76,6 +76,7 @@ pub struct AppState {
     pub watcher: Mutex<Option<RecommendedWatcher>>,
     pub watched_path: Mutex<Option<String>>,
     pub agent_child: Mutex<Option<Box<dyn Child + Send>>>,
+    pub agent_writer: Mutex<Option<Box<dyn std::io::Write + Send>>>,
     pub agent_status: Mutex<AgentStatus>,
 }
 
@@ -85,6 +86,7 @@ impl Default for AppState {
             watcher: Mutex::new(None),
             watched_path: Mutex::new(None),
             agent_child: Mutex::new(None),
+            agent_writer: Mutex::new(None),
             agent_status: Mutex::new(AgentStatus::Stopped),
         }
     }
@@ -268,10 +270,12 @@ async fn start_agent(
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
-    // Store child process
+    // Store child process and writer
     {
         let mut child_guard = state.agent_child.lock().await;
         *child_guard = Some(child);
+        let mut writer_guard = state.agent_writer.lock().await;
+        *writer_guard = Some(writer);
     }
 
     // Set status to running
@@ -305,18 +309,21 @@ async fn start_agent(
         let _ = app_clone.emit("agent-exit", 0);
     });
 
-    let _ = writer; // suppress unused warning
-
     Ok(format!("Started agent: {}", config.agent_type.executable_name()))
 }
 
 #[tauri::command]
 async fn stop_agent(state: State<'_, AppState>) -> Result<String, String> {
-    let mut child_guard = state.agent_child.lock().await;
-    if let Some(mut child) = child_guard.take() {
-        child.kill().map_err(|e| e.to_string())?;
+    {
+        let mut child_guard = state.agent_child.lock().await;
+        if let Some(mut child) = child_guard.take() {
+            let _ = child.kill();
+        }
     }
-    drop(child_guard);
+    {
+        let mut writer_guard = state.agent_writer.lock().await;
+        *writer_guard = None;
+    }
 
     let mut status = state.agent_status.lock().await;
     *status = AgentStatus::Stopped;
@@ -328,6 +335,18 @@ async fn stop_agent(state: State<'_, AppState>) -> Result<String, String> {
 async fn get_agent_status(state: State<'_, AppState>) -> Result<AgentStatus, String> {
     let status = state.agent_status.lock().await;
     Ok(status.clone())
+}
+
+#[tauri::command]
+async fn write_to_agent(state: State<'_, AppState>, data: String) -> Result<(), String> {
+    let mut writer_guard = state.agent_writer.lock().await;
+    if let Some(ref mut writer) = *writer_guard {
+        writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+        writer.flush().map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("Agent not running".to_string())
+    }
 }
 
 fn main() {
@@ -351,6 +370,7 @@ fn main() {
             start_agent,
             stop_agent,
             get_agent_status,
+            write_to_agent,
         ])
         .setup(|_app| {
             log::info!("Cospace started");
