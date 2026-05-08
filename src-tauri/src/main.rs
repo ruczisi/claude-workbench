@@ -48,6 +48,7 @@ impl AgentType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
     pub agent_type: AgentType,
+    pub command: Option<String>,        // 实际可执行文件路径
     pub working_dir: Option<String>,
     pub env_vars: Option<HashMap<String, String>>,
 }
@@ -179,17 +180,37 @@ fn update_team_tasks(app: AppHandle, tasks: Vec<TeamTask>) -> Result<(), String>
 fn find_agent_in_path(agent_type: AgentType) -> Result<Option<String>, String> {
     let executable_name = agent_type.executable_name();
 
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: 先搜几个常见位置
+        let common_paths = vec![
+            std::path::PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
+                .join("claude"),
+            std::path::PathBuf::from(std::env::var("USERPROFILE").unwrap_or_default())
+                .join(".local")
+                .join("bin"),
+            std::path::PathBuf::from(std::env::var("APPDATA").unwrap_or_default())
+                .join("npm"),
+        ];
+
+        for base in common_paths {
+            for ext in &["", ".exe", ".cmd", ".bat"] {
+                let candidate = base.join(format!("{}{}", executable_name, ext));
+                if candidate.exists() {
+                    return Ok(Some(candidate.to_string_lossy().to_string()));
+                }
+            }
+        }
+    }
+
+    // 标准 PATH 搜索
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
-            let candidate = dir.join(executable_name);
-            if candidate.exists() {
-                return Ok(Some(candidate.to_string_lossy().to_string()));
-            }
-            #[cfg(target_os = "windows")]
-            let exe_candidate = dir.join(format!("{}.exe", executable_name));
-            #[cfg(target_os = "windows")]
-            if exe_candidate.exists() {
-                return Ok(Some(exe_candidate.to_string_lossy().to_string()));
+            for ext in &["", ".exe", ".cmd", ".bat"] {
+                let candidate = dir.join(format!("{}{}", executable_name, ext));
+                if candidate.exists() {
+                    return Ok(Some(candidate.to_string_lossy().to_string()));
+                }
             }
         }
     }
@@ -228,7 +249,9 @@ async fn start_agent(
         })
         .map_err(|e| e.to_string())?;
 
-    let mut cmd = CommandBuilder::new(config.agent_type.executable_name());
+    // 使用传入的 command 路径（绝对路径），否则回退到 executable_name
+    let executable = config.command.unwrap_or_else(|| config.agent_type.executable_name().to_string());
+    let mut cmd = CommandBuilder::new(executable);
 
     if let Some(working_dir) = config.working_dir {
         cmd.cwd(std::path::PathBuf::from(working_dir));
