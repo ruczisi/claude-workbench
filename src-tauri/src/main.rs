@@ -181,6 +181,7 @@ fn update_team_tasks(app: AppHandle, tasks: Vec<TeamTask>) -> Result<(), String>
 #[tauri::command]
 fn find_agent_in_path(agent_type: AgentType) -> Result<Option<String>, String> {
     let executable_name = agent_type.executable_name();
+    log::info!("[Cospace] find_agent_in_path searching for: {}", executable_name);
 
     #[cfg(target_os = "windows")]
     {
@@ -195,11 +196,14 @@ fn find_agent_in_path(agent_type: AgentType) -> Result<Option<String>, String> {
                 .join("npm"),
         ];
 
-        for base in common_paths {
+        for base in &common_paths {
             for ext in &["", ".exe", ".cmd", ".bat"] {
                 let candidate = base.join(format!("{}{}", executable_name, ext));
+                let path_str = candidate.to_string_lossy();
+                log::info!("[Cospace] checking: {}", path_str);
                 if candidate.exists() {
-                    return Ok(Some(candidate.to_string_lossy().to_string()));
+                    log::info!("[Cospace] FOUND: {}", path_str);
+                    return Ok(Some(path_str.to_string()));
                 }
             }
         }
@@ -210,13 +214,16 @@ fn find_agent_in_path(agent_type: AgentType) -> Result<Option<String>, String> {
         for dir in std::env::split_paths(&path) {
             for ext in &["", ".exe", ".cmd", ".bat"] {
                 let candidate = dir.join(format!("{}{}", executable_name, ext));
+                let path_str = candidate.to_string_lossy();
                 if candidate.exists() {
-                    return Ok(Some(candidate.to_string_lossy().to_string()));
+                    log::info!("[Cospace] FOUND in PATH: {}", path_str);
+                    return Ok(Some(path_str.to_string()));
                 }
             }
         }
     }
 
+    log::warn!("[Cospace] agent not found: {}", executable_name);
     Ok(None)
 }
 
