@@ -43,6 +43,7 @@ export default function Terminal() {
       cursorStyle: 'block',
       scrollback: 10000,
       convertEol: true,
+      allowProposedApi: true,
     });
 
     const fitAddon = new FitAddon();
@@ -50,6 +51,7 @@ export default function Terminal() {
 
     xterm.open(terminalRef.current);
     fitAddon.fit();
+    xterm.focus();
 
     xtermRef.current = xterm;
     fitAddonRef.current = fitAddon;
@@ -85,10 +87,21 @@ export default function Terminal() {
 
     // Send keyboard input to agent
     xterm.onData((data) => {
-      writeToAgent(data).catch(() => {
-        // Agent not running, ignore
+      console.log('[Cospace] xterm.onData fired:', JSON.stringify(data));
+      writeToAgent(data).catch((err) => {
+        console.log('[Cospace] writeToAgent error:', err);
       });
     });
+
+    // Keyboard handler as fallback
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (xtermRef.current) {
+        // Send to xterm
+        xtermRef.current.write(e.key);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
 
     return () => {
       if (unlistenAgentOutput) unlistenAgentOutput();
@@ -104,7 +117,7 @@ export default function Terminal() {
         <span className="text-xs text-gray-400">Terminal</span>
         <span className="text-xs text-gray-500">bash</span>
       </div>
-      <div ref={terminalRef} className="flex-1 p-2 overflow-hidden" />
+      <div ref={terminalRef} className="flex-1 p-2 overflow-hidden" style={{ cursor: 'text' }} tabIndex={0} />
     </div>
   );
 }
