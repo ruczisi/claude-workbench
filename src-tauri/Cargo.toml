@@ -1,16 +1,12 @@
 [package]
-name = "claude-workbench"
+name = "cospace"
 version = "0.1.0"
-description = "A visual workbench integrating Claude Code terminal with content preview"
+description = "A visual workbench integrating AI agents with content preview"
 authors = ["ruczisi"]
 license = "MIT"
-repository = "https://github.com/ruczisi/claude-workbench"
+repository = "https://github.com/ruczisi/cospace"
 edition = "2021"
 rust-version = "1.77.2"
-
-[lib]
-name = "app_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -27,3 +23,5 @@ serde_json = "1"
 notify = "8"
 tokio = { version = "1", features = ["full"] }
 log = "0.4"
+portable-pty = "0.8"
+anyhow = "1"

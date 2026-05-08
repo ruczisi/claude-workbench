@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { onAgentOutput } from '../services/agentService';
 
 export default function Terminal() {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -55,7 +56,7 @@ export default function Terminal() {
 
     // Welcome message
     xterm.writeln('\x1b[32m╔══════════════════════════════════════════════════════════╗\x1b[0m');
-    xterm.writeln('\x1b[32m║\x1b[0m   \x1b[1;36mClaude Workbench\x1b[0m - Terminal                          \x1b[32m║\x1b[0m');
+    xterm.writeln('\x1b[32m║\x1b[0m   \x1b[1;36mCospace\x1b[0m - AI Agent Terminal                    \x1b[32m║\x1b[0m');
     xterm.writeln('\x1b[32m╠══════════════════════════════════════════════════════════╣\x1b[0m');
     xterm.writeln('\x1b[32m║\x1b[0m   Type \x1b[33mclaude\x1b[0m to start, or enter any command.       \x1b[32m║\x1b[0m');
     xterm.writeln('\x1b[32m║\x1b[0m   Press \x1b[33mCtrl+C\x1b[0m to interrupt, \x1b[33mCtrl+L\x1b[0m to clear.     \x1b[32m║\x1b[0m');
@@ -72,7 +73,18 @@ export default function Terminal() {
 
     window.addEventListener('resize', handleResize);
 
+    // Subscribe to Agent output
+    let unlistenAgentOutput: (() => void) | null = null;
+    onAgentOutput((line) => {
+      if (xtermRef.current) {
+        xtermRef.current.writeln(line);
+      }
+    }).then((unlisten) => {
+      unlistenAgentOutput = unlisten;
+    });
+
     return () => {
+      if (unlistenAgentOutput) unlistenAgentOutput();
       window.removeEventListener('resize', handleResize);
       xterm.dispose();
       xtermRef.current = null;

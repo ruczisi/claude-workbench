@@ -1,5 +1,9 @@
 import { create } from 'zustand';
 
+export type AgentType = 'claude' | 'codex' | 'custom';
+export type SidebarTab = 'workspace' | 'history' | 'settings';
+export type AgentStatus = 'stopped' | 'starting' | 'running' | { error: string };
+
 interface FileEvent {
   path: string;
   event_type: 'create' | 'modify' | 'remove';
@@ -48,6 +52,24 @@ interface AppState {
   // Status bar
   isTeamPanelExpanded: boolean;
   setTeamPanelExpanded: (expanded: boolean) => void;
+
+  // Settings
+  activeAgent: AgentType;
+  setActiveAgent: (agent: AgentType) => void;
+  autoStartAgent: boolean;
+  setAutoStartAgent: (auto: boolean) => void;
+  customAgentCommand: string;
+  setCustomAgentCommand: (cmd: string) => void;
+
+  // Sidebar
+  activeTab: SidebarTab;
+  setActiveTab: (tab: SidebarTab) => void;
+
+  // Agent runtime state
+  agentStatus: AgentStatus;
+  setAgentStatus: (status: AgentStatus) => void;
+  agentPath: string | null;
+  setAgentPath: (path: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -92,4 +114,22 @@ export const useAppStore = create<AppState>((set) => ({
   // Status bar
   isTeamPanelExpanded: false,
   setTeamPanelExpanded: (expanded) => set({ isTeamPanelExpanded: expanded }),
+
+  // Settings
+  activeAgent: 'claude',
+  setActiveAgent: (agent) => set({ activeAgent: agent }),
+  autoStartAgent: true,
+  setAutoStartAgent: (auto) => set({ autoStartAgent: auto }),
+  customAgentCommand: '',
+  setCustomAgentCommand: (cmd) => set({ customAgentCommand: cmd }),
+
+  // Sidebar
+  activeTab: 'workspace',
+  setActiveTab: (tab) => set({ activeTab: tab }),
+
+  // Agent runtime state
+  agentStatus: 'stopped',
+  setAgentStatus: (status) => set({ agentStatus: status }),
+  agentPath: null,
+  setAgentPath: (path) => set({ agentPath: path }),
 }));

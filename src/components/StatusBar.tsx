@@ -122,7 +122,7 @@ export default function StatusBar() {
           {fileEvents.length > 0 && (
             <span>今日文件变更: {getFileChangeCount()}</span>
           )}
-          <span>Claude Workbench v0.1.0</span>
+          <span>Cospace v0.1.0</span>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 {
-  "name": "claude-workbench",
+  "name": "cospace",
   "version": "0.1.0",
-  "description": "A visual workbench integrating Claude Code terminal with content preview",
+  "description": "A visual workbench integrating AI agents with content preview",
   "type": "module",
   "scripts": {
     "dev": "vite",
