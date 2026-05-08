@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default permissions for Claude Workbench",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "shell:allow-execute",
+    "fs:default",
+    "fs:allow-read",
+    "fs:allow-watch",
+    "dialog:default",
+    "dialog:allow-open",
+    "notification:default"
+  ]
+}

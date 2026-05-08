@@ -1,0 +1,127 @@
+{
+  "title": "Claude Workbench MVP",
+  "version": "1.0.0",
+  "status": "blocked",
+  "stories": [
+    {
+      "id": "US-001",
+      "name": "项目脚手架搭建",
+      "description": "Tauri + React + TypeScript 项目基础结构",
+      "priority": "critical",
+      "acceptanceCriteria": [
+        "package.json 包含所有必要依赖",
+        "tsconfig.json 配置正确",
+        "vite.config.ts 配置正确",
+        "tailwind.config.js 配置正确",
+        "src-tauri 目录结构完整",
+        "前端构建成功 (npm run build)"
+      ],
+      "passes": true
+    },
+    {
+      "id": "US-002",
+      "name": "VS Code 风格三栏布局",
+      "description": "实现左导航 + 中终端 + 右预览的布局",
+      "priority": "critical",
+      "acceptanceCriteria": [
+        "Sidebar 组件：导航栏包含文件/项目/设置",
+        "Terminal 组件：中间终端区域",
+        "Preview 组件：右侧预览区域",
+        "StatusBar 组件：底部状态栏",
+        "App 组件：正确组合所有布局组件",
+        "深色/浅色主题切换功能正常"
+      ],
+      "passes": true
+    },
+    {
+      "id": "US-003",
+      "name": "终端模块集成",
+      "description": "xterm.js 终端模拟器集成",
+      "priority": "critical",
+      "acceptanceCriteria": [
+        "xterm.js 正确安装和配置",
+        "终端组件能正常渲染",
+        "终端主题配置正确（深色主题）",
+        "终端自适应窗口大小"
+      ],
+      "passes": true
+    },
+    {
+      "id": "US-004",
+      "name": "预览模块",
+      "description": "内容预览功能",
+      "priority": "critical",
+      "acceptanceCriteria": [
+        "Markdown 渲染正常（react-markdown + remark-gfm）",
+        "HTML iframe 预览正常",
+        "图片预览正常",
+        "文件选择对话框可用（@tauri-apps/plugin-dialog）"
+      ],
+      "passes": true
+    },
+    {
+      "id": "US-005",
+      "name": "Team 状态栏",
+      "description": "任务进度和异常告警",
+      "priority": "high",
+      "acceptanceCriteria": [
+        "Team 任务列表显示",
+        "进度条可视化",
+        "异常告警高亮显示",
+        "点击展开/收起详情面板"
+      ],
+      "passes": true
+    },
+    {
+      "id": "US-006",
+      "name": "文件监听",
+      "description": "Rust 后端文件监听功能",
+      "priority": "high",
+      "acceptanceCriteria": [
+        "start_file_watcher 命令可用",
+        "stop_file_watcher 命令可用",
+        "文件变更事件能推送到前端",
+        "前端能接收并显示文件事件"
+      ],
+      "passes": true
+    },
+    {
+      "id": "US-007",
+      "name": "Rust 后端编译",
+      "description": "Tauri 后端成功编译",
+      "priority": "critical",
+      "acceptanceCriteria": [
+        "Cargo.toml 配置正确",
+        "Rust 依赖安装完成",
+        "cargo build 成功",
+        "Tauri 命令注册正确"
+      ],
+      "passes": false
+    },
+    {
+      "id": "US-008",
+      "name": "Tauri 应用打包",
+      "description": "生产版本构建",
+      "priority": "critical",
+      "acceptanceCriteria": [
+        "npm run tauri build 成功",
+        "生成可执行的 .exe 文件",
+        "应用能正常启动",
+        "窗口控制（最小化/最大化/关闭）正常"
+      ],
+      "passes": false
+    }
+  ],
+  "blockers": [
+    {
+      "id": "BLOCKER-002",
+      "description": "Windows Build Tools 不完整 - link.exe 无法正确链接 Rust 编译的对象文件",
+      "severity": "critical",
+      "solutions": [
+        "方案1: 安装 Visual Studio Build Tools with C++ workload",
+        "方案2: 安装 Windows SDK (包含正确的 link.exe)",
+        "方案3: 回到 GNU 工具链并安装 MinGW-w64"
+      ]
+    }
+  ]
+}
