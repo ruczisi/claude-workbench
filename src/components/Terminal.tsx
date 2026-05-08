@@ -12,7 +12,7 @@ export default function Terminal() {
   useEffect(() => {
     if (!terminalRef.current || xtermRef.current) return;
 
-    // Initialize xterm
+    // Initialize xterm with all features enabled
     const xterm = new XTerm({
       theme: {
         background: '#1f2937',
@@ -43,14 +43,17 @@ export default function Terminal() {
       cursorStyle: 'block',
       scrollback: 10000,
       convertEol: true,
-      allowProposedApi: true,
+      macOptionIsMeta: true,
     });
 
     const fitAddon = new FitAddon();
     xterm.loadAddon(fitAddon);
 
+    // Open terminal
     xterm.open(terminalRef.current);
     fitAddon.fit();
+
+    // Focus terminal
     xterm.focus();
 
     xtermRef.current = xterm;
@@ -85,23 +88,13 @@ export default function Terminal() {
       unlistenAgentOutput = unlisten;
     });
 
-    // Send keyboard input to agent
+    // Handle terminal input - let xterm handle local echo first
     xterm.onData((data) => {
       console.log('[Cospace] xterm.onData fired:', JSON.stringify(data));
-      writeToAgent(data).catch((err) => {
-        console.log('[Cospace] writeToAgent error:', err);
+      writeToAgent(data).catch(() => {
+        // Agent not running - that's ok for now
       });
     });
-
-    // Keyboard handler as fallback
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (xtermRef.current) {
-        // Send to xterm
-        xtermRef.current.write(e.key);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
 
     return () => {
       if (unlistenAgentOutput) unlistenAgentOutput();
