@@ -1,55 +1,90 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
-export type AgentType = 'claude' | 'codex' | 'opencode' | 'custom';
-
-export interface AgentConfig {
-  agent_type: AgentType;
-  command: string;
-  args: string[];
-  cwd?: string;
+export interface ClaudeConversation {
+  id: string;
+  name: string;
+  updated_at: string;
+  message_count: number;
 }
 
-export type AgentStatus = 'stopped' | 'starting' | 'running' | { error: string };
-
-export async function findAgentInPath(agentType: AgentType): Promise<string | null> {
-  return invoke('find_agent_in_path', { agentType });
+export interface SessionOutput {
+  sessionId: string;
+  data: string;
 }
 
-export async function startAgent(config: AgentConfig): Promise<void> {
-  return invoke('start_agent', { config });
+export interface SessionExit {
+  sessionId: string;
+  code: number;
 }
 
-export async function stopAgent(): Promise<void> {
-  return invoke('stop_agent');
-}
+// ===== Session Management =====
 
-export async function getAgentStatus(): Promise<AgentStatus> {
-  return invoke('get_agent_status');
-}
-
-export async function writeToAgent(data: string): Promise<void> {
-  return invoke('write_to_agent', { data });
-}
-
-export async function startShell(cwd?: string): Promise<void> {
-  return invoke('start_shell', { workingDir: cwd || null });
-}
-
-export function onAgentOutput(callback: (line: string) => void): Promise<UnlistenFn> {
-  return listen<string>('agent-output', (event) => {
-    callback(event.payload);
+export async function createSession(
+  sessionId: string,
+  workingDir?: string,
+): Promise<string> {
+  return invoke('create_session', {
+    sessionId,
+    workingDir: workingDir || null,
   });
 }
 
-export function onAgentError(callback: (error: string) => void): Promise<UnlistenFn> {
-  return listen<string>('agent-error', (event) => {
-    callback(event.payload);
+export async function destroySession(sessionId: string): Promise<string> {
+  return invoke('destroy_session', { sessionId });
+}
+
+export async function writeToSession(
+  sessionId: string,
+  data: string,
+): Promise<void> {
+  return invoke('write_to_session', { sessionId, data });
+}
+
+export async function listSessions(): Promise<string[]> {
+  return invoke('list_sessions');
+}
+
+export async function resizeSession(
+  sessionId: string,
+  rows: number,
+  cols: number,
+): Promise<void> {
+  return invoke('resize_session', { sessionId, rows, cols });
+}
+
+// ===== Conversation Scanning =====
+
+export async function scanConversations(
+  workspacePath?: string,
+  additionalPaths: string[] = [],
+): Promise<ClaudeConversation[]> {
+  return invoke('scan_conversations', {
+    workspacePath: workspacePath || null,
+    additionalPaths,
   });
 }
 
-export function onAgentExit(callback: (code: number) => void): Promise<UnlistenFn> {
-  return listen<number>('agent-exit', (event) => {
-    callback(event.payload);
+// ===== Event Listeners =====
+
+export function onSessionOutput(
+  callback: (data: SessionOutput) => void,
+): Promise<UnlistenFn> {
+  return listen<{ session_id: string; data: string }>('session-output', (event) => {
+    callback({
+      sessionId: event.payload.session_id,
+      data: event.payload.data,
+    });
+  });
+}
+
+export function onSessionExit(
+  callback: (data: SessionExit) => void,
+): Promise<UnlistenFn> {
+  return listen<{ session_id: string; code: number }>('session-exit', (event) => {
+    callback({
+      sessionId: event.payload.session_id,
+      code: event.payload.code,
+    });
   });
 }

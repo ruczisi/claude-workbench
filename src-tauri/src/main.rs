@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
-use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{Child, CommandBuilder, PtyPair, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -48,36 +48,41 @@ impl AgentType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
     pub agent_type: AgentType,
-    pub command: Option<String>,        // 实际可执行文件路径
+    pub command: Option<String>,
     pub working_dir: Option<String>,
     pub env_vars: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AgentStatus {
-    Stopped,
-    Starting,
-    Running,
-    Error(String),
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionOutput {
+    pub session_id: String,
+    pub data: String,
 }
 
-impl std::fmt::Display for AgentStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AgentStatus::Stopped => write!(f, "Stopped"),
-            AgentStatus::Starting => write!(f, "Starting"),
-            AgentStatus::Running => write!(f, "Running"),
-            AgentStatus::Error(msg) => write!(f, "Error: {}", msg),
-        }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionExit {
+    pub session_id: String,
+    pub code: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeConversation {
+    pub id: String,
+    pub name: String,
+    pub updated_at: String,
+    pub message_count: u32,
+}
+
+pub struct SessionSlot {
+    pub pty_pair: Option<PtyPair>,
+    pub child: Option<Box<dyn Child + Send>>,
+    pub writer: Option<Box<dyn std::io::Write + Send>>,
 }
 
 pub struct AppState {
     pub watcher: Mutex<Option<RecommendedWatcher>>,
     pub watched_path: Mutex<Option<String>>,
-    pub agent_child: Mutex<Option<Box<dyn Child + Send>>>,
-    pub agent_writer: Mutex<Option<Box<dyn std::io::Write + Send>>>,
-    pub agent_status: Mutex<AgentStatus>,
+    pub sessions: Mutex<HashMap<String, SessionSlot>>,
 }
 
 impl Default for AppState {
@@ -85,9 +90,7 @@ impl Default for AppState {
         Self {
             watcher: Mutex::new(None),
             watched_path: Mutex::new(None),
-            agent_child: Mutex::new(None),
-            agent_writer: Mutex::new(None),
-            agent_status: Mutex::new(AgentStatus::Stopped),
+            sessions: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -185,7 +188,6 @@ fn find_agent_in_path(agent_type: AgentType) -> Result<Option<String>, String> {
 
     #[cfg(target_os = "windows")]
     {
-        // Windows: 先搜几个常见位置
         let common_paths = vec![
             std::path::PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
                 .join("claude"),
@@ -209,7 +211,6 @@ fn find_agent_in_path(agent_type: AgentType) -> Result<Option<String>, String> {
         }
     }
 
-    // 标准 PATH 搜索
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
             for ext in &["", ".exe", ".cmd", ".bat"] {
@@ -230,7 +231,6 @@ fn find_agent_in_path(agent_type: AgentType) -> Result<Option<String>, String> {
 fn get_default_shell() -> String {
     #[cfg(target_os = "windows")]
     {
-        // Try PowerShell first, fall back to cmd.exe
         let ps = std::env::var_os("PROGRAMFILES")
             .map(|p| {
                 let mut path = std::path::PathBuf::from(p);
@@ -240,7 +240,6 @@ fn get_default_shell() -> String {
                 if path.exists() {
                     return path.to_string_lossy().to_string();
                 }
-                // Try Windows PowerShell
                 let sys_root = std::env::var_os("SYSTEMROOT").unwrap_or_default();
                 let mut win_ps = std::path::PathBuf::from(sys_root);
                 win_ps.push("System32");
@@ -258,117 +257,16 @@ fn get_default_shell() -> String {
     }
 }
 
+// ===== Multi-Session PTY Commands =====
+
 #[tauri::command]
-async fn start_shell(
+async fn create_session(
     app: AppHandle,
     state: State<'_, AppState>,
+    session_id: String,
     working_dir: Option<String>,
 ) -> Result<String, String> {
-    // Check if something is already running
-    {
-        let status = state.agent_status.lock().await;
-        if *status != AgentStatus::Stopped {
-            return Err("A process is already running. Stop it first.".to_string());
-        }
-    }
-
-    {
-        let mut status = state.agent_status.lock().await;
-        *status = AgentStatus::Starting;
-    }
-
     let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
-        .map_err(|e| e.to_string())?;
-
-    let shell_exe = get_default_shell();
-    log::info!("[Cospace] Starting shell: {}", shell_exe);
-
-    let mut cmd = CommandBuilder::new(&shell_exe);
-
-    if let Some(dir) = &working_dir {
-        cmd.cwd(std::path::PathBuf::from(dir));
-    }
-
-    let child = match pair.slave.spawn_command(cmd) {
-        Ok(child) => child,
-        Err(e) => {
-            log::error!("[Cospace] Failed to spawn shell: {}", e);
-            let mut status = state.agent_status.lock().await;
-            *status = AgentStatus::Stopped;
-            return Err(e.to_string());
-        }
-    };
-
-    log::info!("[Cospace] Shell spawned successfully");
-
-    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
-
-    // Store child process and writer
-    {
-        let mut child_guard = state.agent_child.lock().await;
-        *child_guard = Some(child);
-        let mut writer_guard = state.agent_writer.lock().await;
-        *writer_guard = Some(writer);
-    }
-
-    {
-        let mut status = state.agent_status.lock().await;
-        *status = AgentStatus::Running;
-    }
-
-    let app_clone = app.clone();
-    tokio::spawn(async move {
-        use std::io::Read;
-        let mut reader = reader;
-        let mut buf = [0u8; 1024];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => {
-                    let _ = app_clone.emit("agent-output", "");
-                    break;
-                }
-                Ok(n) => {
-                    let output = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let _ = app_clone.emit("agent-output", output);
-                }
-                Err(e) => {
-                    let _ = app_clone.emit("agent-error", e.to_string());
-                    break;
-                }
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-        }
-        let _ = app_clone.emit("agent-exit", 0);
-    });
-
-    Ok(format!("Started shell: {}", shell_exe))
-}
-
-#[tauri::command]
-async fn start_agent(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    config: AgentConfig,
-) -> Result<String, String> {
-    // Check if agent is already running
-    {
-        let status = state.agent_status.lock().await;
-        if *status != AgentStatus::Stopped {
-            return Err(format!("Agent is already {}", status));
-        }
-    }
-
-    // Set status to starting
-    {
-        let mut status = state.agent_status.lock().await;
-        *status = AgentStatus::Starting;
-    }
-
-    let pty_system = native_pty_system();
-
     let pair = pty_system
         .openpty(PtySize {
             rows: 24,
@@ -378,109 +276,348 @@ async fn start_agent(
         })
         .map_err(|e| e.to_string())?;
 
-    // 使用传入的 command 路径（绝对路径），否则回退到 executable_name
-    let executable = config.command.unwrap_or_else(|| config.agent_type.executable_name().to_string());
-    log::info!("[Cospace] Starting agent: executable={}", executable);
+    let shell_exe = get_default_shell();
+    log::info!("[Cospace] create_session {} shell: {}", session_id, shell_exe);
 
-    let mut cmd = CommandBuilder::new(executable);
-
-    if let Some(working_dir) = config.working_dir {
-        cmd.cwd(std::path::PathBuf::from(working_dir));
-    }
-
-    if let Some(env_vars) = config.env_vars {
-        for (key, value) in env_vars {
-            cmd.env(&key, &value);
-        }
+    let mut cmd = CommandBuilder::new(&shell_exe);
+    if let Some(dir) = &working_dir {
+        cmd.cwd(std::path::PathBuf::from(dir));
     }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| {
-        log::error!("[Cospace] Failed to spawn agent: {}", e);
+        log::error!("[Cospace] create_session {} spawn failed: {}", session_id, e);
         e.to_string()
     })?;
 
-    log::info!("[Cospace] Agent child process spawned successfully");
-
-    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
-    // Store child process and writer
-    {
-        let mut child_guard = state.agent_child.lock().await;
-        *child_guard = Some(child);
-        let mut writer_guard = state.agent_writer.lock().await;
-        *writer_guard = Some(writer);
-    }
+    let slot = SessionSlot {
+        pty_pair: Some(pair),
+        child: Some(child),
+        writer: Some(writer),
+    };
 
-    // Set status to running
     {
-        let mut status = state.agent_status.lock().await;
-        *status = AgentStatus::Running;
+        let mut sessions = state.sessions.lock().await;
+        sessions.insert(session_id.clone(), slot);
     }
 
     let app_clone = app.clone();
+    let sid = session_id.clone();
     tokio::spawn(async move {
         use std::io::Read;
         let mut reader = reader;
-        let mut buf = [0u8; 1024];
+        let mut buf = [0u8; 4096];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {
-                    let _ = app_clone.emit("agent-output", "");
+                    log::info!("[Cospace] session {} reader EOF", sid);
+                    let _ = app_clone.emit(
+                        "session-output",
+                        SessionOutput {
+                            session_id: sid.clone(),
+                            data: String::new(),
+                        },
+                    );
                     break;
                 }
                 Ok(n) => {
                     let output = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let _ = app_clone.emit("agent-output", output);
+                    let _ = app_clone.emit(
+                        "session-output",
+                        SessionOutput {
+                            session_id: sid.clone(),
+                            data: output,
+                        },
+                    );
                 }
                 Err(e) => {
-                    let _ = app_clone.emit("agent-error", e.to_string());
+                    log::error!("[Cospace] session {} reader error: {}", sid, e);
                     break;
                 }
             }
-            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        let _ = app_clone.emit("agent-exit", 0);
+        let _ = app_clone.emit(
+            "session-exit",
+            SessionExit {
+                session_id: sid,
+                code: 0,
+            },
+        );
     });
 
-    Ok(format!("Started agent: {}", config.agent_type.executable_name()))
+    Ok(session_id)
 }
 
 #[tauri::command]
-async fn stop_agent(state: State<'_, AppState>) -> Result<String, String> {
-    {
-        let mut child_guard = state.agent_child.lock().await;
-        if let Some(mut child) = child_guard.take() {
+async fn destroy_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<String, String> {
+    let mut sessions = state.sessions.lock().await;
+    if let Some(mut slot) = sessions.remove(&session_id) {
+        if let Some(mut child) = slot.child.take() {
             let _ = child.kill();
         }
-    }
-    {
-        let mut writer_guard = state.agent_writer.lock().await;
-        *writer_guard = None;
-    }
-
-    let mut status = state.agent_status.lock().await;
-    *status = AgentStatus::Stopped;
-
-    Ok("Agent stopped".to_string())
-}
-
-#[tauri::command]
-async fn get_agent_status(state: State<'_, AppState>) -> Result<AgentStatus, String> {
-    let status = state.agent_status.lock().await;
-    Ok(status.clone())
-}
-
-#[tauri::command]
-async fn write_to_agent(state: State<'_, AppState>, data: String) -> Result<(), String> {
-    let mut writer_guard = state.agent_writer.lock().await;
-    if let Some(ref mut writer) = *writer_guard {
-        writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-        writer.flush().map_err(|e| e.to_string())?;
-        Ok(())
+        slot.writer = None;
+        slot.pty_pair = None;
+        log::info!("[Cospace] Session {} destroyed", session_id);
+        Ok(format!("Session {} destroyed", session_id))
     } else {
-        Err("Agent not running".to_string())
+        Err(format!("Session {} not found", session_id))
     }
+}
+
+#[tauri::command]
+async fn write_to_session(
+    state: State<'_, AppState>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    use std::io::Write;
+    let mut sessions = state.sessions.lock().await;
+    if let Some(slot) = sessions.get_mut(&session_id) {
+        if let Some(ref mut writer) = slot.writer {
+            writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+            writer.flush().map_err(|e| e.to_string())?;
+            Ok(())
+        } else {
+            Err("Session writer not available".to_string())
+        }
+    } else {
+        Err(format!("Session {} not found", session_id))
+    }
+}
+
+#[tauri::command]
+async fn resize_session(
+    state: State<'_, AppState>,
+    session_id: String,
+    rows: u16,
+    cols: u16,
+) -> Result<(), String> {
+    let mut sessions = state.sessions.lock().await;
+    if let Some(slot) = sessions.get_mut(&session_id) {
+        if let Some(ref pair) = slot.pty_pair {
+            pair.master
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    }
+    Err(format!("Session {} not found", session_id))
+}
+
+#[tauri::command]
+async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let sessions = state.sessions.lock().await;
+    Ok(sessions.keys().cloned().collect())
+}
+
+/// Quick line count for a file by counting newline bytes.
+fn quick_line_count(path: &std::path::Path) -> u32 {
+    use std::io::Read;
+    if let Ok(mut f) = std::fs::File::open(path) {
+        let mut buf = [0u8; 65536];
+        let mut count = 0u32;
+        loop {
+            match f.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    count += buf[..n].iter().filter(|&&b| b == b'\n').count() as u32;
+                }
+                Err(_) => break,
+            }
+        }
+        return count;
+    }
+    0
+}
+
+/// Format a SystemTime to ISO string for display.
+fn fmt_time(t: std::time::SystemTime) -> String {
+    let secs = t
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    // Format as YYYY-MM-DD HH:MM
+    let days = secs / 86400;
+    let time_secs = secs % 86400;
+    let h = time_secs / 3600;
+    let m = (time_secs % 3600) / 60;
+
+    // Simple date from days since epoch
+    let mut y = 1970i64;
+    let mut remaining = days as i64;
+    loop {
+        let days_in_year = if (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0) {
+            366
+        } else {
+            365
+        };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        y += 1;
+    }
+    let month_days = if (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    let mut mo = 0usize;
+    for (i, &md) in month_days.iter().enumerate() {
+        if remaining < md as i64 {
+            mo = i;
+            break;
+        }
+        remaining -= md as i64;
+    }
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:00Z",
+        y,
+        mo + 1,
+        remaining + 1,
+        h,
+        m
+    )
+}
+
+/// Scan a directory recursively for .jsonl files and return conversation metadata.
+fn scan_jsonl_files(dir: &std::path::Path, conversations: &mut Vec<ClaudeConversation>) {
+    if !dir.exists() {
+        return;
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                // Recurse into subdirectories (one level)
+                if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                    for sub in sub_entries.flatten() {
+                        let sub_path = sub.path();
+                        if sub_path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                            process_jsonl_file(&sub_path, conversations);
+                        }
+                    }
+                }
+            } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                process_jsonl_file(&path, conversations);
+            }
+        }
+    }
+}
+
+fn process_jsonl_file(path: &std::path::Path, conversations: &mut Vec<ClaudeConversation>) {
+    let id = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+    if id.is_empty() {
+        return;
+    }
+
+    // Skip if already added (dedup)
+    if conversations.iter().any(|c| c.id == id) {
+        return;
+    }
+
+    let updated_at = std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .map(fmt_time)
+        .unwrap_or_default();
+
+    let message_count = quick_line_count(path);
+
+    // Date-based name — user can rename in-app by double-clicking
+    let name = if updated_at.len() >= 16 {
+        format!("{} 对话", &updated_at[..16])
+    } else {
+        format!("对话 {}", &id[..8])
+    };
+
+    conversations.push(ClaudeConversation {
+        id,
+        name,
+        updated_at,
+        message_count,
+    });
+}
+
+#[tauri::command]
+async fn scan_conversations(
+    workspace_path: Option<String>,
+    additional_paths: Vec<String>,
+) -> Result<Vec<ClaudeConversation>, String> {
+    let mut all_ids = std::collections::HashSet::new();
+    let mut conversations = Vec::new();
+
+    // 1. Always scan ~/.claude/projects/ for Claude Code sessions
+    if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+        let claude_projects = std::path::PathBuf::from(&home).join(".claude").join("projects");
+        if claude_projects.exists() {
+            if let Ok(entries) = std::fs::read_dir(&claude_projects) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        scan_jsonl_files(&path, &mut conversations);
+                    } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                        process_jsonl_file(&path, &mut conversations);
+                    }
+                }
+            }
+        }
+        // Also scan ~/.claude/ directly (some tools store sessions at top level)
+        let claude_dir = std::path::PathBuf::from(&home).join(".claude");
+        scan_jsonl_files(&claude_dir, &mut conversations);
+    }
+
+    // 2. Scan workspace path
+    if let Some(wp) = &workspace_path {
+        let wp_path = std::path::PathBuf::from(wp);
+        if wp_path.exists() {
+            // Scan workspace/.claude/
+            scan_jsonl_files(&wp_path.join(".claude"), &mut conversations);
+            // Scan workspace root for session files
+            scan_jsonl_files(&wp_path, &mut conversations);
+        }
+    }
+
+    // 3. Scan user-provided additional paths
+    for p in &additional_paths {
+        let ap = std::path::PathBuf::from(p);
+        if ap.exists() {
+            scan_jsonl_files(&ap, &mut conversations);
+        }
+    }
+
+    // Deduplicate by id
+    conversations.retain(|c| {
+        if all_ids.contains(&c.id) {
+            false
+        } else {
+            all_ids.insert(c.id.clone());
+            true
+        }
+    });
+
+    // Sort by updated_at descending
+    conversations.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    conversations.truncate(10);
+
+    Ok(conversations)
 }
 
 fn main() {
@@ -501,11 +638,12 @@ fn main() {
             get_watched_path,
             update_team_tasks,
             find_agent_in_path,
-            start_shell,
-            start_agent,
-            stop_agent,
-            get_agent_status,
-            write_to_agent,
+            create_session,
+            destroy_session,
+            write_to_session,
+            resize_session,
+            list_sessions,
+            scan_conversations,
         ])
         .setup(|_app| {
             log::info!("Cospace started");
