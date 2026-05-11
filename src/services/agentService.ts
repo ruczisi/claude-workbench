@@ -32,6 +32,10 @@ export async function writeToAgent(data: string): Promise<void> {
   return invoke('write_to_agent', { data });
 }
 
+export async function startShell(cwd?: string): Promise<void> {
+  return invoke('start_shell', { workingDir: cwd || null });
+}
+
 export function onAgentOutput(callback: (line: string) => void): Promise<UnlistenFn> {
   return listen<string>('agent-output', (event) => {
     callback(event.payload);

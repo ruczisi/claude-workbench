@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { onAgentOutput, writeToAgent } from '../services/agentService';
+import { onAgentExit, onAgentOutput, startShell, writeToAgent } from '../services/agentService';
 
 export default function Terminal() {
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -59,15 +59,11 @@ export default function Terminal() {
     xtermRef.current = xterm;
     fitAddonRef.current = fitAddon;
 
-    // Welcome message
-    xterm.writeln('\x1b[32m╔══════════════════════════════════════════════════════════╗\x1b[0m');
-    xterm.writeln('\x1b[32m║\x1b[0m   \x1b[1;36mCospace\x1b[0m - AI Agent Terminal                    \x1b[32m║\x1b[0m');
-    xterm.writeln('\x1b[32m╠══════════════════════════════════════════════════════════╣\x1b[0m');
-    xterm.writeln('\x1b[32m║\x1b[0m   Type \x1b[33mclaude\x1b[0m to start, or enter any command.       \x1b[32m║\x1b[0m');
-    xterm.writeln('\x1b[32m║\x1b[0m   Press \x1b[33mCtrl+C\x1b[0m to interrupt, \x1b[33mCtrl+L\x1b[0m to clear.     \x1b[32m║\x1b[0m');
-    xterm.writeln('\x1b[32m╚══════════════════════════════════════════════════════════╝\x1b[0m');
-    xterm.writeln('');
-    xterm.write('\x1b[36m$\x1b[0m ');
+    // Start system shell for a fully functional terminal
+    startShell().catch((err) => {
+      console.error('[Cospace] Failed to start shell:', err);
+      xterm.writeln('\x1b[31mFailed to start shell. Please check the console.\x1b[0m');
+    });
 
     // Handle resize
     const handleResize = () => {
@@ -88,15 +84,28 @@ export default function Terminal() {
       unlistenAgentOutput = unlisten;
     });
 
-    // Handle terminal input - let xterm handle local echo first
+    // Subscribe to Agent/Shell exit to restart shell if needed
+    let unlistenExit: (() => void) | null = null;
+    onAgentExit(() => {
+      // Restart shell after a brief delay to avoid racing with agent startup
+      setTimeout(() => {
+        startShell().catch(() => {
+          // Agent may have started, that's fine
+        });
+      }, 300);
+    }).then((unlisten) => {
+      unlistenExit = unlisten;
+    });
+
+    // Handle terminal input - forward to shell/agent
     xterm.onData((data) => {
-      console.log('[Cospace] xterm.onData fired:', JSON.stringify(data));
       writeToAgent(data).catch(() => {
-        // Agent not running - that's ok for now
+        // No process running - that's ok
       });
     });
 
     return () => {
+      if (unlistenExit) unlistenExit();
       if (unlistenAgentOutput) unlistenAgentOutput();
       window.removeEventListener('resize', handleResize);
       xterm.dispose();

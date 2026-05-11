@@ -227,6 +227,126 @@ fn find_agent_in_path(agent_type: AgentType) -> Result<Option<String>, String> {
     Ok(None)
 }
 
+fn get_default_shell() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        // Try PowerShell first, fall back to cmd.exe
+        let ps = std::env::var_os("PROGRAMFILES")
+            .map(|p| {
+                let mut path = std::path::PathBuf::from(p);
+                path.push("PowerShell");
+                path.push("7");
+                path.push("pwsh.exe");
+                if path.exists() {
+                    return path.to_string_lossy().to_string();
+                }
+                // Try Windows PowerShell
+                let sys_root = std::env::var_os("SYSTEMROOT").unwrap_or_default();
+                let mut win_ps = std::path::PathBuf::from(sys_root);
+                win_ps.push("System32");
+                win_ps.push("WindowsPowerShell");
+                win_ps.push("v1.0");
+                win_ps.push("powershell.exe");
+                return win_ps.to_string_lossy().to_string();
+            })
+            .unwrap_or_else(|| "cmd.exe".to_string());
+        ps
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+    }
+}
+
+#[tauri::command]
+async fn start_shell(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    working_dir: Option<String>,
+) -> Result<String, String> {
+    // Check if something is already running
+    {
+        let status = state.agent_status.lock().await;
+        if *status != AgentStatus::Stopped {
+            return Err("A process is already running. Stop it first.".to_string());
+        }
+    }
+
+    {
+        let mut status = state.agent_status.lock().await;
+        *status = AgentStatus::Starting;
+    }
+
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+        .map_err(|e| e.to_string())?;
+
+    let shell_exe = get_default_shell();
+    log::info!("[Cospace] Starting shell: {}", shell_exe);
+
+    let mut cmd = CommandBuilder::new(&shell_exe);
+
+    if let Some(dir) = &working_dir {
+        cmd.cwd(std::path::PathBuf::from(dir));
+    }
+
+    let child = match pair.slave.spawn_command(cmd) {
+        Ok(child) => child,
+        Err(e) => {
+            log::error!("[Cospace] Failed to spawn shell: {}", e);
+            let mut status = state.agent_status.lock().await;
+            *status = AgentStatus::Stopped;
+            return Err(e.to_string());
+        }
+    };
+
+    log::info!("[Cospace] Shell spawned successfully");
+
+    let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+
+    // Store child process and writer
+    {
+        let mut child_guard = state.agent_child.lock().await;
+        *child_guard = Some(child);
+        let mut writer_guard = state.agent_writer.lock().await;
+        *writer_guard = Some(writer);
+    }
+
+    {
+        let mut status = state.agent_status.lock().await;
+        *status = AgentStatus::Running;
+    }
+
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        use std::io::Read;
+        let mut reader = reader;
+        let mut buf = [0u8; 1024];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => {
+                    let _ = app_clone.emit("agent-output", "");
+                    break;
+                }
+                Ok(n) => {
+                    let output = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let _ = app_clone.emit("agent-output", output);
+                }
+                Err(e) => {
+                    let _ = app_clone.emit("agent-error", e.to_string());
+                    break;
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        }
+        let _ = app_clone.emit("agent-exit", 0);
+    });
+
+    Ok(format!("Started shell: {}", shell_exe))
+}
+
 #[tauri::command]
 async fn start_agent(
     app: AppHandle,
@@ -381,6 +501,7 @@ fn main() {
             get_watched_path,
             update_team_tasks,
             find_agent_in_path,
+            start_shell,
             start_agent,
             stop_agent,
             get_agent_status,

@@ -1,7 +1,7 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore, AgentType } from '../stores/appStore';
-import { startAgent, findAgentInPath } from '../services/agentService';
+import { startAgent, stopAgent, findAgentInPath } from '../services/agentService';
 
 interface SidebarProps {
   theme: 'dark' | 'light';
@@ -39,8 +39,10 @@ export default function Sidebar({ theme, onToggleTheme }: SidebarProps) {
           const agentPath = await findAgentInPath(activeAgent);
           console.log('[Cospace] agentPath found:', agentPath);
           if (agentPath) {
-            console.log('[Cospace] starting agent with path:', agentPath);
+            console.log('[Cospace] stopping shell before starting agent:', agentPath);
             try {
+              await stopAgent(); // Kill shell first
+              console.log('[Cospace] shell stopped, starting agent:', agentPath);
               await startAgent({
                 agent_type: activeAgent,
                 command: agentPath,
