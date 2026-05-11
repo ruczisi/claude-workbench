@@ -48,34 +48,37 @@ type LineType =
   | { type: 'noise' }
   | { type: 'content'; text: string };
 
-// Status line patterns → route to status bar
+// Status → status bar (agent metadata)
 const STATUS_RE = /(\[OMC|thinking\s*\|)|(session:\d+m)|(ctx:\d+%)|(tokens?\))/i;
 
-// Progress patterns → show as inline animation
-const PROGRESS_RE = /(Newspapering|running.*hook|stop hook|Scanning|Loading|fetching|downloading)/i;
-
-// Noise patterns → discard entirely
-const NOISE_RE = /(Brewed for|Press Ctrl-C|stop hook error|hook.*failed|jq:.*not found)/i;
+// Progress/noise → animation or discard (OMC/Claude Code internal chatter)
+const PROGRESS_NOISE_RE = /(Newspapering|Sketching|Cooked for|thinking with|thought for|still thinking|running.*hook|stop hook|Scanning|Loading|fetching|downloading|Brewed for|Press Ctrl-C|hook.*error|hook.*failed|jq:.*not found|\bxhigh effort\b|\bhigh effort\b|↓ \d+ tokens?|thought for \d+s)/i;
 
 function classifyLine(line: string): LineType {
   const trimmed = line.trim();
-  if (!trimmed) return { type: 'noise' }; // skip blanks in classification
+  if (!trimmed) return { type: 'noise' };
 
-  // Divider / prompt / symbol-only lines
+  // Divider / prompt lines
   if (/^[\s─━]+$/.test(trimmed)) return { type: 'noise' };
   if (/^\s*❯\s*$/.test(trimmed)) return { type: 'noise' };
-  if (/^[✢·\*✶✻✽⏺⏵⎿\s\d]+$/.test(trimmed)) return { type: 'progress' };
   if (/^[\d\s]{5,}$/.test(trimmed)) return { type: 'noise' };
+
+  // Symbol-only or symbol+number lines (OMC progress)
+  if (/^[✢·\*✶✻✽⏺⏵⎿\s\d]+$/.test(trimmed)) return { type: 'noise' };
+
+  // Lines dominated by symbols mixed with status junk
+  const alphaOnly = trimmed.replace(/[✢·\*✶✻✽⏺⏵⎿\s\d\.\,\;\:\!\?]+/g, '');
+  if (alphaOnly.length < 3) return { type: 'noise' };
+  if (trimmed.length > 10 && alphaOnly.length < 5) return { type: 'noise' };
 
   // Status → status bar
   if (STATUS_RE.test(trimmed)) return { type: 'status', text: trimmed };
 
-  // Progress → inline animation
-  if (PROGRESS_RE.test(trimmed)) return { type: 'progress', text: trimmed };
+  // Progress/noise → animate or discard
+  if (PROGRESS_NOISE_RE.test(trimmed)) return { type: 'progress' };
 
-  // Noise → discard
-  if (NOISE_RE.test(trimmed)) return { type: 'noise' };
-  if (/^(stop hook|hook)/i.test(trimmed)) return { type: 'noise' };
+  // Lines that start with symbol then noise word
+  if (/^[✢·\*✶✻✽⏺⏵⎿\s\d]+(thinking|Sketching|Cooked|Newspapering|Brewed)/i.test(trimmed)) return { type: 'progress' };
 
   // Everything else → content
   return { type: 'content', text: trimmed };
@@ -181,6 +184,7 @@ export default function Terminal() {
   const sessionOutputs = useRef<Map<string, string>>(new Map());
   const sessionMessages = useRef<Map<string, Message[]>>(new Map());
   const sessionProgress = useRef<Map<string, boolean>>(new Map());
+  const progressTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const strippers = useRef<Map<string, ReturnType<typeof createAnsiStripper>>>(new Map());
   const watchedPathRef = useRef<string | null>(null);
   const sessionsRef = useRef<ReturnType<typeof useAppStore.getState>['sessions']>([]);
@@ -321,7 +325,16 @@ export default function Terminal() {
 
       // Route status to status bar
       if (status) setAgentStatusText(status);
-      if (hasProgress) sessionProgress.current.set(sessionId, true);
+      if (hasProgress) {
+        sessionProgress.current.set(sessionId, true);
+        // Auto-clear progress after 3s idle
+        const existing = progressTimers.current.get(sessionId);
+        if (existing) clearTimeout(existing);
+        progressTimers.current.set(sessionId, setTimeout(() => {
+          sessionProgress.current.set(sessionId, false);
+          scheduleRender();
+        }, 3000));
+      }
 
       // Accumulate raw content for the chat bubble (filtered on flush)
       const prev = sessionOutputs.current.get(sessionId) || '';
@@ -345,6 +358,8 @@ export default function Terminal() {
       sessionOutputs.current.clear();
       sessionMessages.current.clear();
       sessionProgress.current.clear();
+      progressTimers.current.forEach((t) => clearTimeout(t));
+      progressTimers.current.clear();
       strippers.current.clear();
     };
   }, [updateSession, flushAgentOutput, appendSystemMessage, setAgentStatusText]);
@@ -456,7 +471,7 @@ export default function Terminal() {
       {/* Chat area */}
       <div
         ref={outputRef}
-        className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
+        className="flex-1 overflow-y-auto px-4 py-3 space-y-3"
         onClick={() => inputRef.current?.focus()}
       >
         {sessions.length === 0 && (
