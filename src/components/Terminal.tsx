@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -32,11 +32,16 @@ function inferFileType(path: string): PreviewFile['type'] {
 
 export default function Terminal() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const xtermInstances = useRef<Map<string, XTermInstance>>(new Map());
   const initializedSessions = useRef<Set<string>>(new Set());
   const watchedPathRef = useRef<string | null>(null);
   const sessionsRef = useRef<ReturnType<typeof useAppStore.getState>['sessions']>([]);
   const activeSessionIdRef = useRef<string | null>(null);
+
+  const [inputValue, setInputValue] = useState('');
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [, setHistoryIndex] = useState(-1);
 
   // Store state
   const startupPhase = useAppStore((s) => s.startupPhase);
@@ -61,7 +66,7 @@ export default function Terminal() {
   const theme = {
     background: '#1f2937',
     foreground: '#e5e7eb',
-    cursor: '#10b981',
+    cursor: '#1f2937',
     cursorAccent: '#1f2937',
     selectionBackground: '#3b82f680',
     black: '#1f2937',
@@ -87,47 +92,34 @@ export default function Terminal() {
   // Handle link clicks from terminal — open in preview panel
   const handleLinkClick = useCallback(
     (_event: MouseEvent, uri: string) => {
-      // Prevent default browser navigation
       try {
-        // Check if it's a local file path (Windows or Unix style)
         const isFile =
-          /^[a-zA-Z]:[\\/]/.test(uri) || // Windows absolute path
-          /^\//.test(uri) ||              // Unix absolute path
-          /^file:\/\//.test(uri);         // file:// protocol
+          /^[a-zA-Z]:[\\/]/.test(uri) ||
+          /^\//.test(uri) ||
+          /^file:\/\//.test(uri);
 
         if (isFile) {
           let cleanPath = uri;
           if (cleanPath.startsWith('file://')) {
             cleanPath = decodeURI(cleanPath.replace('file://', ''));
-            // On Windows, strip leading / after file://
             if (/^\/[a-zA-Z]:/.test(cleanPath)) {
               cleanPath = cleanPath.slice(1);
             }
           }
           const name = cleanPath.split(/[/\\]/).pop() || 'unknown';
-          setPreviewFile({
-            path: cleanPath,
-            name,
-            type: inferFileType(cleanPath),
-          });
+          setPreviewFile({ path: cleanPath, name, type: inferFileType(cleanPath) });
         } else if (/^https?:\/\//.test(uri)) {
-          // Web URL — show in iframe preview
           const name = uri.replace(/^https?:\/\//, '').split('/')[0] || uri;
-          setPreviewFile({
-            path: uri,
-            name,
-            type: 'html',
-          });
+          setPreviewFile({ path: uri, name, type: 'html' });
         }
-        // otherwise ignore (e.g., mailto:, unknown protocols)
       } catch {
-        // silently ignore bad URLs
+        // ignore
       }
     },
     [setPreviewFile],
   );
 
-  // Initialize xterm for a session when its div mounts
+  // Initialize xterm for a session — output only, no input
   const registerTerminalDiv = useCallback(
     (sessionId: string, div: HTMLDivElement | null) => {
       if (!div) return;
@@ -145,11 +137,11 @@ export default function Terminal() {
         theme,
         fontFamily,
         fontSize,
-        cursorBlink: true,
+        cursorBlink: false,
         cursorStyle: 'block',
         scrollback: 10000,
         convertEol: true,
-        macOptionIsMeta: true,
+        disableStdin: true,
       });
 
       const fitAddon = new FitAddon();
@@ -162,25 +154,16 @@ export default function Terminal() {
       xterm.open(div);
       fitAddon.fit();
 
-      const instance: XTermInstance = { xterm, fitAddon, div };
-      xtermInstances.current.set(sessionId, instance);
+      xtermInstances.current.set(sessionId, { xterm, fitAddon, div });
 
-      // Show welcome message
       xterm.writeln('\x1b[36m■ Cospace Terminal\x1b[0m');
       xterm.writeln(`\x1b[90m  Session: ${sessionId.substring(0, 8)}...\x1b[0m`);
       xterm.writeln('');
 
-      // Forward keyboard input to session
-      xterm.onData((data) => {
-        writeToSession(sessionId, data).catch(() => {});
-      });
-
-      // Fit on next tick
       setTimeout(() => {
         try { fitAddon.fit(); } catch { /* ignore */ }
       }, 50);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [handleLinkClick],
   );
 
@@ -213,7 +196,111 @@ export default function Terminal() {
     }
   }, []);
 
-  // Listen for session events (runs once)
+  // Send input to active session
+  const sendInput = useCallback(
+    (text: string) => {
+      const sessionId = activeSessionIdRef.current;
+      if (!sessionId) return;
+
+      writeToSession(sessionId, text).catch(() => {});
+
+      // Record history
+      const trimmed = text.trim();
+      // Only record printable commands (not control chars) in history
+      if (trimmed && trimmed.charCodeAt(0) >= 0x20) {
+        setCommandHistory((prev) => {
+          const next = [...prev, trimmed];
+          return next.length > 100 ? next.slice(-100) : next;
+        });
+        setHistoryIndex(-1);
+      }
+    },
+    [],
+  );
+
+  // Handle input submission
+  const handleInputSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!inputValue) return;
+      sendInput(inputValue + '\r');
+      setInputValue('');
+    },
+    [inputValue, sendInput],
+  );
+
+  // Handle input key events
+  const handleInputKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      // Ctrl+C → send interrupt
+      if (e.key === 'c' && e.ctrlKey) {
+        e.preventDefault();
+        sendInput('\x03');
+        return;
+      }
+      // Ctrl+D → send EOF
+      if (e.key === 'd' && e.ctrlKey) {
+        e.preventDefault();
+        sendInput('\x04');
+        return;
+      }
+      // Ctrl+L → clear screen
+      if (e.key === 'l' && e.ctrlKey) {
+        e.preventDefault();
+        sendInput('\x0c');
+        return;
+      }
+      // Arrow Up → previous command
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHistoryIndex((prev) => {
+          const next = prev + 1;
+          if (next >= commandHistory.length) return prev;
+          setInputValue(commandHistory[commandHistory.length - 1 - next] || '');
+          return next;
+        });
+        return;
+      }
+      // Arrow Down → next command
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHistoryIndex((prev) => {
+          if (prev <= 0) {
+            setInputValue('');
+            return -1;
+          }
+          const next = prev - 1;
+          setInputValue(commandHistory[commandHistory.length - 1 - next] || '');
+          return next;
+        });
+        return;
+      }
+      // Escape → clear input
+      if (e.key === 'Escape') {
+        setInputValue('');
+        return;
+      }
+      // Tab → send tab character
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        sendInput('\t');
+        return;
+      }
+    },
+    [commandHistory, sendInput],
+  );
+
+  // Focus input when switching sessions
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [activeSessionId]);
+
+  // Click on terminal display → focus input
+  const handleDisplayClick = useCallback(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // Listen for session events
   useEffect(() => {
     let unlistenOutput: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
@@ -237,26 +324,17 @@ export default function Terminal() {
       unlistenExit = fn;
     });
 
-    // Window resize → fit all terminals
     const handleWindowResize = () => {
       xtermInstances.current.forEach((inst) => {
-        try {
-          inst.fitAddon.fit();
-        } catch {
-          // ignore hidden terminals
-        }
+        try { inst.fitAddon.fit(); } catch { /* ignore */ }
       });
-      // Also signal PTY resize for active session
       fitActiveTerminal();
     };
     window.addEventListener('resize', handleWindowResize);
 
-    // ResizeObserver on container for layout-driven resizes
     let resizeObserver: ResizeObserver | null = null;
     if (containerRef.current) {
-      resizeObserver = new ResizeObserver(() => {
-        fitActiveTerminal();
-      });
+      resizeObserver = new ResizeObserver(() => fitActiveTerminal());
       resizeObserver.observe(containerRef.current);
     }
 
@@ -279,7 +357,7 @@ export default function Terminal() {
         setTimeout(() => {
           try {
             instance.fitAddon.fit();
-            instance.xterm.focus();
+            instance.xterm.scrollToBottom();
           } catch {
             // ignore
           }
@@ -288,7 +366,7 @@ export default function Terminal() {
     }
   }, [activeSessionId]);
 
-  // Auto-create first session when workspace is ready
+  // Auto-create first session
   useEffect(() => {
     if (startupPhase !== 'ready' || !watchedPath) return;
     if (sessionsRef.current.length > 0) return;
@@ -297,14 +375,7 @@ export default function Terminal() {
       const id = crypto.randomUUID();
       const name = '会话 1';
 
-      addSession({
-        id,
-        name,
-        status: 'starting',
-        isActive: false,
-        createdAt: Date.now(),
-      });
-
+      addSession({ id, name, status: 'starting', isActive: false, createdAt: Date.now() });
       setActiveSession(id);
 
       try {
@@ -317,17 +388,10 @@ export default function Terminal() {
           setTimeout(() => {
             let cmd: string;
             switch (activeAgent) {
-              case 'claude':
-                cmd = 'claude';
-                break;
-              case 'codex':
-                cmd = 'codex';
-                break;
-              case 'custom':
-                cmd = customAgentCommand || 'claude';
-                break;
-              default:
-                cmd = 'claude';
+              case 'claude': cmd = 'claude'; break;
+              case 'codex': cmd = 'codex'; break;
+              case 'custom': cmd = customAgentCommand || 'claude'; break;
+              default: cmd = 'claude';
             }
             writeToSession(id, `${cmd}\r\n`).catch(() => {});
           }, 1000);
@@ -344,38 +408,21 @@ export default function Terminal() {
     };
 
     createFirstSession();
-  }, [
-    startupPhase,
-    watchedPath,
-    activeAgent,
-    customAgentCommand,
-    autoStartAgent,
-    addSession,
-    setActiveSession,
-    updateSession,
-  ]);
+  }, [startupPhase, watchedPath, activeAgent, customAgentCommand, autoStartAgent, addSession, setActiveSession, updateSession]);
 
-  // Create new session (called from "+" button)
+  // Create new session
   const handleNewSession = useCallback(async () => {
     const id = crypto.randomUUID();
     const count = sessionsRef.current.length + 1;
     const name = `会话 ${count}`;
     const wp = watchedPathRef.current;
 
-    addSession({
-      id,
-      name,
-      status: 'starting',
-      isActive: false,
-      createdAt: Date.now(),
-    });
-
+    addSession({ id, name, status: 'starting', isActive: false, createdAt: Date.now() });
     setActiveSession(id);
 
     try {
       await apiCreateSession(id, wp || undefined);
       updateSession(id, { status: 'running' });
-
       if (wp) {
         writeToSession(id, `cd "${wp}"\r\n`).catch(() => {});
       }
@@ -393,18 +440,13 @@ export default function Terminal() {
   // Close a session
   const handleCloseSession = useCallback(
     async (sessionId: string) => {
-      try {
-        await apiDestroySession(sessionId);
-      } catch {
-        // already stopped
-      }
+      try { await apiDestroySession(sessionId); } catch { /* ignore */ }
       cleanupXTerm(sessionId);
       removeSession(sessionId);
     },
     [cleanupXTerm, removeSession],
   );
 
-  // Handle keyboard shortcuts (e.g., Ctrl+W to close tab)
   const handleTabKeyDown = useCallback(
     (e: React.KeyboardEvent, sessionId: string) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
@@ -415,17 +457,14 @@ export default function Terminal() {
     [handleCloseSession],
   );
 
+  const activeSession = sessions.find((s) => s.id === activeSessionId);
+
   return (
     <div className="flex-1 flex flex-col bg-gray-800">
       {/* Tab bar */}
       <div className="flex bg-gray-900 border-b border-gray-700 overflow-x-auto shrink-0">
         {sessions.map((session) => (
-          <div
-            key={session.id}
-            className="relative group"
-            tabIndex={0}
-            onKeyDown={(e) => handleTabKeyDown(e, session.id)}
-          >
+          <div key={session.id} className="relative group" tabIndex={0} onKeyDown={(e) => handleTabKeyDown(e, session.id)}>
             <button
               onClick={() => setActiveSession(session.id)}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-r border-gray-700 whitespace-nowrap transition-colors ${
@@ -445,10 +484,7 @@ export default function Terminal() {
               />
               <span className="truncate max-w-[120px]">{session.name}</span>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCloseSession(session.id);
-                }}
+                onClick={(e) => { e.stopPropagation(); handleCloseSession(session.id); }}
                 className="ml-0.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                 title="关闭会话"
               >
@@ -470,8 +506,8 @@ export default function Terminal() {
         </button>
       </div>
 
-      {/* Terminal container */}
-      <div ref={containerRef} className="flex-1 p-2 overflow-hidden relative">
+      {/* Terminal display area */}
+      <div ref={containerRef} className="flex-1 overflow-hidden relative" onClick={handleDisplayClick}>
         {sessions.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
             <div className="text-center">
@@ -489,15 +525,58 @@ export default function Terminal() {
           <div
             key={session.id}
             ref={(el) => registerTerminalDiv(session.id, el)}
-            className="absolute inset-0 overflow-hidden"
+            className="p-2"
             style={{
-              display: session.id === activeSessionId ? 'block' : 'none',
-              cursor: 'text',
+              position: 'absolute',
+              inset: 0,
+              zIndex: session.id === activeSessionId ? 1 : 0,
+              pointerEvents: 'none',
             }}
-            tabIndex={0}
           />
         ))}
       </div>
+
+      {/* Input bar */}
+      {activeSession && activeSession.status !== 'completed' && (
+        <div className="shrink-0 border-t border-gray-700 bg-gray-900 px-3 py-2">
+          <form onSubmit={handleInputSubmit} className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 shrink-0">
+              {activeSession.status === 'running' ? (
+                <span className="text-green-400">▶</span>
+              ) : activeSession.status === 'starting' ? (
+                <span className="text-yellow-400 animate-pulse">◉</span>
+              ) : null}
+            </span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              placeholder="输入命令..."
+              className="flex-1 bg-transparent text-gray-200 text-sm outline-none font-mono placeholder-gray-600"
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button
+              type="submit"
+              className="text-xs text-gray-500 hover:text-gray-300 px-2 py-0.5 rounded hover:bg-gray-800 transition-colors"
+              title="发送 (Enter)"
+            >
+              ↵
+            </button>
+            <button
+              type="button"
+              onClick={() => sendInput('\x03')}
+              className="text-xs text-gray-500 hover:text-red-400 px-2 py-0.5 rounded hover:bg-red-900/30 transition-colors"
+              title="中断 (Ctrl+C)"
+            >
+              ■
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
