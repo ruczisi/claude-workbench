@@ -92,6 +92,10 @@ interface AppState {
   agentPath: string | null;
   setAgentPath: (path: string | null) => void;
 
+  // Agent live status for status bar
+  agentStatusText: string;
+  setAgentStatusText: (text: string) => void;
+
   // Sessions (multi-session PTY)
   sessions: SessionState[];
   activeSessionId: string | null;
@@ -177,6 +181,10 @@ export const useAppStore = create<AppState>((set) => ({
   setAgentStatus: (status) => set({ agentStatus: status }),
   agentPath: null,
   setAgentPath: (path) => set({ agentPath: path }),
+
+  // Agent live status for status bar
+  agentStatusText: '',
+  setAgentStatusText: (text) => set({ agentStatusText: text }),
 
   // Sessions (multi-session PTY)
   sessions: [],

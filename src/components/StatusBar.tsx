@@ -7,6 +7,7 @@ export default function StatusBar() {
     setTeamPanelExpanded,
     watchedPath,
     fileEvents,
+    agentStatusText,
   } = useAppStore();
 
   const completedTasks = teamTasks.filter((t) => t.status === 'completed').length;
@@ -119,6 +120,9 @@ export default function StatusBar() {
 
         {/* Right side */}
         <div className="flex items-center space-x-4 text-gray-500">
+          {agentStatusText && (
+            <span className="text-gray-400 animate-pulse">{agentStatusText}</span>
+          )}
           {fileEvents.length > 0 && (
             <span>今日文件变更: {getFileChangeCount()}</span>
           )}
