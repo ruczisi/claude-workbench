@@ -1,23 +1,115 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { Terminal as XTerm } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
-import '@xterm/xterm/css/xterm.css';
 import {
   createSession as apiCreateSession,
   destroySession as apiDestroySession,
   writeToSession,
-  resizeSession,
   onSessionOutput,
   onSessionExit,
 } from '../services/agentService';
 import { useAppStore, PreviewFile } from '../stores/appStore';
 
-interface XTermInstance {
-  xterm: XTerm;
-  fitAddon: FitAddon;
-  div: HTMLDivElement | null;
+// ===== ANSI / terminal escape sequence stripper =====
+
+// Regex for CSI sequences: ESC [ ... <letter>
+const CSI_RE = /\x1b\[[0-9;?]*[a-zA-Z]/g;
+// OSC sequences: ESC ] ... BEL or ST
+const OSC_RE = /\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g;
+// Other escapes: ESC + single char
+const SIMPLE_ESC_RE = /\x1b[^[\]]./g;
+// Backspace sequences (used for progress bars: char + BS)
+const BS_RE = /.\x08/g;
+
+function stripAnsi(text: string): string {
+  return text
+    .replace(OSC_RE, '')
+    .replace(CSI_RE, '')
+    .replace(SIMPLE_ESC_RE, '')
+    .replace(BS_RE, '')          // remove progress-bar backspaces
+    .replace(/\r\n/g, '\n')      // CRLF → LF
+    .replace(/\r/g, '\n');       // standalone CR → LF
 }
+
+// Buffer partial ANSI sequences that may span chunk boundaries
+function createAnsiStripper() {
+  let buf = '';
+
+  return function feed(chunk: string): string {
+    buf += chunk;
+    // Process complete lines only — keep incomplete ANSI in buffer
+    const cleaned = stripAnsi(buf);
+    // Check if buffer ends with a potential incomplete escape
+    const lastEsc = buf.lastIndexOf('\x1b');
+    if (lastEsc >= 0 && lastEsc >= buf.length - 10) {
+      // Might be mid-escape, only output up to that point
+      const safeEnd = lastEsc;
+      const safe = buf.slice(0, safeEnd);
+      buf = buf.slice(safeEnd);
+      return stripAnsi(safe);
+    }
+    buf = '';
+    return cleaned;
+  };
+}
+
+// ===== Link detection =====
+
+function detectLinks(text: string): Array<{ start: number; end: number; url: string }> {
+  const links: Array<{ start: number; end: number; url: string }> = [];
+  const re = /https?:\/\/[^\s<>")\]]+/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    links.push({ start: m.index, end: m.index + m[0].length, url: m[0] });
+  }
+  return links;
+}
+
+// ===== Output line component =====
+
+function OutputBlock({
+  text,
+  onLinkClick,
+}: {
+  text: string;
+  onLinkClick: (url: string) => void;
+}) {
+  const links = detectLinks(text);
+  if (links.length === 0) {
+    return <>{text}</>;
+  }
+
+  const parts: Array<{ type: 'text' | 'link'; content: string; url?: string }> = [];
+  let lastEnd = 0;
+  for (const link of links) {
+    if (link.start > lastEnd) {
+      parts.push({ type: 'text', content: text.slice(lastEnd, link.start) });
+    }
+    parts.push({ type: 'link', content: link.url, url: link.url });
+    lastEnd = link.end;
+  }
+  if (lastEnd < text.length) {
+    parts.push({ type: 'text', content: text.slice(lastEnd) });
+  }
+
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.type === 'link' ? (
+          <button
+            key={i}
+            onClick={() => onLinkClick(p.url!)}
+            className="text-blue-400 hover:text-blue-300 underline cursor-pointer"
+          >
+            {p.content}
+          </button>
+        ) : (
+          <span key={i}>{p.content}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+// ===== Main component =====
 
 function inferFileType(path: string): PreviewFile['type'] {
   const ext = path.split('.').pop()?.toLowerCase() || '';
@@ -30,18 +122,24 @@ function inferFileType(path: string): PreviewFile['type'] {
   return 'unknown';
 }
 
+interface SessionOutputState {
+  output: string;   // cleaned text displayed so far
+}
+
 export default function Terminal() {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const xtermInstances = useRef<Map<string, XTermInstance>>(new Map());
-  const initializedSessions = useRef<Set<string>>(new Set());
+  const sessionOutputs = useRef<Map<string, SessionOutputState>>(new Map());
+  const strippers = useRef<Map<string, ReturnType<typeof createAnsiStripper>>>(new Map());
   const watchedPathRef = useRef<string | null>(null);
   const sessionsRef = useRef<ReturnType<typeof useAppStore.getState>['sessions']>([]);
   const activeSessionIdRef = useRef<string | null>(null);
+  const [renderTick, setRenderTick] = useState(0); // force re-render for streaming
 
   const [inputValue, setInputValue] = useState('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
-  const [, setHistoryIndex] = useState(-1);
+  const [, setHistoryIndexState] = useState(-1);
+  const historyIndexRef = useRef(-1);
 
   // Store state
   const startupPhase = useAppStore((s) => s.startupPhase);
@@ -57,166 +155,37 @@ export default function Terminal() {
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setPreviewFile = useAppStore((s) => s.setPreviewFile);
 
-  // Keep refs in sync
   watchedPathRef.current = watchedPath;
   sessionsRef.current = sessions;
   activeSessionIdRef.current = activeSessionId;
 
-  // XTerm theme config
-  const theme = {
-    background: '#1f2937',
-    foreground: '#e5e7eb',
-    cursor: '#1f2937',
-    cursorAccent: '#1f2937',
-    selectionBackground: '#3b82f680',
-    black: '#1f2937',
-    red: '#ef4444',
-    green: '#10b981',
-    yellow: '#f59e0b',
-    blue: '#3b82f6',
-    magenta: '#8b5cf6',
-    cyan: '#06b6d4',
-    white: '#e5e7eb',
-    brightBlack: '#4b5563',
-    brightRed: '#f87171',
-    brightGreen: '#34d399',
-    brightYellow: '#fbbf24',
-    brightBlue: '#60a5fa',
-    brightMagenta: '#a78bfa',
-    brightCyan: '#22d3ee',
-    brightWhite: '#f9fafb',
-  };
-  const fontFamily = 'Consolas, "Courier New", monospace';
-  const fontSize = 14;
-
-  // Handle link clicks from terminal — open in preview panel
-  const handleLinkClick = useCallback(
-    (_event: MouseEvent, uri: string) => {
-      try {
-        const isFile =
-          /^[a-zA-Z]:[\\/]/.test(uri) ||
-          /^\//.test(uri) ||
-          /^file:\/\//.test(uri);
-
-        if (isFile) {
-          let cleanPath = uri;
-          if (cleanPath.startsWith('file://')) {
-            cleanPath = decodeURI(cleanPath.replace('file://', ''));
-            if (/^\/[a-zA-Z]:/.test(cleanPath)) {
-              cleanPath = cleanPath.slice(1);
-            }
-          }
-          const name = cleanPath.split(/[/\\]/).pop() || 'unknown';
-          setPreviewFile({ path: cleanPath, name, type: inferFileType(cleanPath) });
-        } else if (/^https?:\/\//.test(uri)) {
-          const name = uri.replace(/^https?:\/\//, '').split('/')[0] || uri;
-          setPreviewFile({ path: uri, name, type: 'html' });
-        }
-      } catch {
-        // ignore
-      }
-    },
-    [setPreviewFile],
-  );
-
-  // Initialize xterm for a session — output only, no input
-  const registerTerminalDiv = useCallback(
-    (sessionId: string, div: HTMLDivElement | null) => {
-      if (!div) return;
-
-      const existing = xtermInstances.current.get(sessionId);
-      if (existing) {
-        existing.div = div;
-        return;
-      }
-
-      if (initializedSessions.current.has(sessionId)) return;
-      initializedSessions.current.add(sessionId);
-
-      const xterm = new XTerm({
-        theme,
-        fontFamily,
-        fontSize,
-        cursorBlink: false,
-        cursorStyle: 'block',
-        scrollback: 10000,
-        convertEol: true,
-        disableStdin: true,
-      });
-
-      const fitAddon = new FitAddon();
-      const webLinksAddon = new WebLinksAddon((_event, uri) => {
-        handleLinkClick(_event, uri);
-      });
-
-      xterm.loadAddon(fitAddon);
-      xterm.loadAddon(webLinksAddon);
-      xterm.open(div);
-      fitAddon.fit();
-
-      xtermInstances.current.set(sessionId, { xterm, fitAddon, div });
-
-      xterm.writeln('\x1b[36m■ Cospace Terminal\x1b[0m');
-      xterm.writeln(`\x1b[90m  Session: ${sessionId.substring(0, 8)}...\x1b[0m`);
-      xterm.writeln('');
-
-      setTimeout(() => {
-        try { fitAddon.fit(); } catch { /* ignore */ }
-      }, 50);
-    },
-    [handleLinkClick],
-  );
-
-  // Fit active terminal and signal PTY resize
-  const fitActiveTerminal = useCallback(() => {
-    const sessionId = activeSessionIdRef.current;
-    if (!sessionId) return;
-    const instance = xtermInstances.current.get(sessionId);
-    if (!instance) return;
-
-    try {
-      instance.fitAddon.fit();
-      const rows = instance.xterm.rows;
-      const cols = instance.xterm.cols;
-      if (rows > 0 && cols > 0) {
-        resizeSession(sessionId, rows, cols).catch(() => {});
-      }
-    } catch {
-      // ignore
+  // Get or create output state for a session
+  const getOutputState = useCallback((sessionId: string): SessionOutputState => {
+    let state = sessionOutputs.current.get(sessionId);
+    if (!state) {
+      state = { output: '' };
+      sessionOutputs.current.set(sessionId, state);
     }
-  }, []);
-
-  // Clean up xterm instance
-  const cleanupXTerm = useCallback((sessionId: string) => {
-    const instance = xtermInstances.current.get(sessionId);
-    if (instance) {
-      instance.xterm.dispose();
-      xtermInstances.current.delete(sessionId);
-      initializedSessions.current.delete(sessionId);
-    }
+    return state;
   }, []);
 
   // Send input to active session
-  const sendInput = useCallback(
-    (text: string) => {
-      const sessionId = activeSessionIdRef.current;
-      if (!sessionId) return;
+  const sendInput = useCallback((text: string) => {
+    const sessionId = activeSessionIdRef.current;
+    if (!sessionId) return;
 
-      writeToSession(sessionId, text).catch(() => {});
+    writeToSession(sessionId, text).catch(() => {});
 
-      // Record history
-      const trimmed = text.trim();
-      // Only record printable commands (not control chars) in history
-      if (trimmed && trimmed.charCodeAt(0) >= 0x20) {
-        setCommandHistory((prev) => {
-          const next = [...prev, trimmed];
-          return next.length > 100 ? next.slice(-100) : next;
-        });
-        setHistoryIndex(-1);
-      }
-    },
-    [],
-  );
+    const trimmed = text.trim();
+    if (trimmed && trimmed.charCodeAt(0) >= 0x20) {
+      setCommandHistory((prev) => {
+        const next = [...prev, trimmed];
+        return next.length > 100 ? next.slice(-100) : next;
+      });
+      historyIndexRef.current = -1;
+      setHistoryIndexState(-1);
+    }
+  }, []);
 
   // Handle input submission
   const handleInputSubmit = useCallback(
@@ -232,55 +201,49 @@ export default function Terminal() {
   // Handle input key events
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      // Ctrl+C → send interrupt
       if (e.key === 'c' && e.ctrlKey) {
         e.preventDefault();
         sendInput('\x03');
         return;
       }
-      // Ctrl+D → send EOF
       if (e.key === 'd' && e.ctrlKey) {
         e.preventDefault();
         sendInput('\x04');
         return;
       }
-      // Ctrl+L → clear screen
       if (e.key === 'l' && e.ctrlKey) {
         e.preventDefault();
         sendInput('\x0c');
         return;
       }
-      // Arrow Up → previous command
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setHistoryIndex((prev) => {
-          const next = prev + 1;
-          if (next >= commandHistory.length) return prev;
-          setInputValue(commandHistory[commandHistory.length - 1 - next] || '');
-          return next;
-        });
+        const idx = historyIndexRef.current + 1;
+        if (idx < commandHistory.length) {
+          historyIndexRef.current = idx;
+          setHistoryIndexState(idx);
+          setInputValue(commandHistory[commandHistory.length - 1 - idx] || '');
+        }
         return;
       }
-      // Arrow Down → next command
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setHistoryIndex((prev) => {
-          if (prev <= 0) {
-            setInputValue('');
-            return -1;
-          }
-          const next = prev - 1;
-          setInputValue(commandHistory[commandHistory.length - 1 - next] || '');
-          return next;
-        });
+        const idx = historyIndexRef.current - 1;
+        if (idx < 0) {
+          historyIndexRef.current = -1;
+          setHistoryIndexState(-1);
+          setInputValue('');
+        } else {
+          historyIndexRef.current = idx;
+          setHistoryIndexState(idx);
+          setInputValue(commandHistory[commandHistory.length - 1 - idx] || '');
+        }
         return;
       }
-      // Escape → clear input
       if (e.key === 'Escape') {
         setInputValue('');
         return;
       }
-      // Tab → send tab character
       if (e.key === 'Tab') {
         e.preventDefault();
         sendInput('\t');
@@ -290,81 +253,92 @@ export default function Terminal() {
     [commandHistory, sendInput],
   );
 
+  // Handle link clicks
+  const handleLinkClick = useCallback(
+    (uri: string) => {
+      const isFile =
+        /^[a-zA-Z]:[\\/]/.test(uri) ||
+        /^\//.test(uri) ||
+        /^file:\/\//.test(uri);
+
+      if (isFile) {
+        let cleanPath = uri;
+        if (cleanPath.startsWith('file://')) {
+          cleanPath = decodeURI(cleanPath.replace('file://', ''));
+          if (/^\/[a-zA-Z]:/.test(cleanPath)) cleanPath = cleanPath.slice(1);
+        }
+        const name = cleanPath.split(/[/\\]/).pop() || 'unknown';
+        setPreviewFile({ path: cleanPath, name, type: inferFileType(cleanPath) });
+      } else if (/^https?:\/\//.test(uri)) {
+        const name = uri.replace(/^https?:\/\//, '').split('/')[0] || uri;
+        setPreviewFile({ path: uri, name, type: 'html' });
+      }
+    },
+    [setPreviewFile],
+  );
+
   // Focus input when switching sessions
   useEffect(() => {
     inputRef.current?.focus();
   }, [activeSessionId]);
 
-  // Click on terminal display → focus input
-  const handleDisplayClick = useCallback(() => {
-    inputRef.current?.focus();
-  }, []);
-
   // Listen for session events
   useEffect(() => {
     let unlistenOutput: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
+    let rafPending = false;
+
+    const scheduleRender = () => {
+      if (!rafPending) {
+        rafPending = true;
+        requestAnimationFrame(() => {
+          rafPending = false;
+          setRenderTick((t) => t + 1);
+        });
+      }
+    };
 
     onSessionOutput(({ sessionId, data }) => {
-      const instance = xtermInstances.current.get(sessionId);
-      if (instance) {
-        instance.xterm.write(data);
+      // Get or create stripper for this session
+      let stripper = strippers.current.get(sessionId);
+      if (!stripper) {
+        stripper = createAnsiStripper();
+        strippers.current.set(sessionId, stripper);
       }
+
+      const cleaned = stripper(data);
+      if (!cleaned) return;
+
+      const state = getOutputState(sessionId);
+      state.output += cleaned;
+      scheduleRender();
     }).then((fn) => {
       unlistenOutput = fn;
     });
 
     onSessionExit(({ sessionId }) => {
-      const instance = xtermInstances.current.get(sessionId);
-      if (instance) {
-        instance.xterm.writeln('\r\n\x1b[90m[Session ended]\x1b[0m');
-      }
+      const state = getOutputState(sessionId);
+      state.output += '\n── 会话结束 ──\n';
+      scheduleRender();
       updateSession(sessionId, { status: 'completed' });
     }).then((fn) => {
       unlistenExit = fn;
     });
 
-    const handleWindowResize = () => {
-      xtermInstances.current.forEach((inst) => {
-        try { inst.fitAddon.fit(); } catch { /* ignore */ }
-      });
-      fitActiveTerminal();
-    };
-    window.addEventListener('resize', handleWindowResize);
-
-    let resizeObserver: ResizeObserver | null = null;
-    if (containerRef.current) {
-      resizeObserver = new ResizeObserver(() => fitActiveTerminal());
-      resizeObserver.observe(containerRef.current);
-    }
-
     return () => {
       if (unlistenOutput) unlistenOutput();
       if (unlistenExit) unlistenExit();
-      window.removeEventListener('resize', handleWindowResize);
-      if (resizeObserver) resizeObserver.disconnect();
-      xtermInstances.current.forEach((inst) => inst.xterm.dispose());
-      xtermInstances.current.clear();
-      initializedSessions.current.clear();
+      sessionOutputs.current.clear();
+      strippers.current.clear();
     };
-  }, [updateSession, fitActiveTerminal]);
+  }, [updateSession, getOutputState]);
 
-  // Fit active xterm when switching sessions
+  // Auto-scroll when output changes
   useEffect(() => {
-    if (activeSessionId) {
-      const instance = xtermInstances.current.get(activeSessionId);
-      if (instance) {
-        setTimeout(() => {
-          try {
-            instance.fitAddon.fit();
-            instance.xterm.scrollToBottom();
-          } catch {
-            // ignore
-          }
-        }, 50);
-      }
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
-  }, [activeSessionId]);
+  }, [renderTick]);
 
   // Auto-create first session
   useEffect(() => {
@@ -400,10 +374,6 @@ export default function Terminal() {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[Cospace] Failed to create session:', msg);
         updateSession(id, { status: 'completed' });
-        const instance = xtermInstances.current.get(id);
-        if (instance) {
-          instance.xterm.writeln(`\x1b[31mFailed: ${msg}\x1b[0m`);
-        }
       }
     };
 
@@ -423,28 +393,23 @@ export default function Terminal() {
     try {
       await apiCreateSession(id, wp || undefined);
       updateSession(id, { status: 'running' });
-      if (wp) {
-        writeToSession(id, `cd "${wp}"\r\n`).catch(() => {});
-      }
+      if (wp) writeToSession(id, `cd "${wp}"\r\n`).catch(() => {});
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[Cospace] Failed to create session:', msg);
       updateSession(id, { status: 'completed' });
-      const instance = xtermInstances.current.get(id);
-      if (instance) {
-        instance.xterm.writeln(`\x1b[31mFailed: ${msg}\x1b[0m`);
-      }
     }
   }, [addSession, setActiveSession, updateSession]);
 
-  // Close a session
+  // Close session
   const handleCloseSession = useCallback(
     async (sessionId: string) => {
       try { await apiDestroySession(sessionId); } catch { /* ignore */ }
-      cleanupXTerm(sessionId);
+      sessionOutputs.current.delete(sessionId);
+      strippers.current.delete(sessionId);
       removeSession(sessionId);
     },
-    [cleanupXTerm, removeSession],
+    [removeSession],
   );
 
   const handleTabKeyDown = useCallback(
@@ -458,9 +423,13 @@ export default function Terminal() {
   );
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const activeOutput = activeSessionId ? sessionOutputs.current.get(activeSessionId)?.output || '' : '';
+
+  // Split output into lines for rendering
+  const outputLines = activeOutput.split('\n');
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-800">
+    <div className="flex-1 flex flex-col bg-gray-900">
       {/* Tab bar */}
       <div className="flex bg-gray-900 border-b border-gray-700 overflow-x-auto shrink-0">
         {sessions.map((session) => (
@@ -506,10 +475,14 @@ export default function Terminal() {
         </button>
       </div>
 
-      {/* Terminal display area */}
-      <div ref={containerRef} className="flex-1 overflow-hidden relative" onClick={handleDisplayClick}>
+      {/* Output display */}
+      <div
+        ref={outputRef}
+        className="flex-1 overflow-y-auto p-3 font-mono text-sm leading-relaxed"
+        onClick={() => inputRef.current?.focus()}
+      >
         {sessions.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
+          <div className="flex items-center justify-center h-full text-gray-500 text-sm">
             <div className="text-center">
               <p>没有活动的会话</p>
               <button
@@ -521,18 +494,10 @@ export default function Terminal() {
             </div>
           </div>
         )}
-        {sessions.map((session) => (
-          <div
-            key={session.id}
-            ref={(el) => registerTerminalDiv(session.id, el)}
-            className="p-2"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              zIndex: session.id === activeSessionId ? 1 : 0,
-              pointerEvents: 'none',
-            }}
-          />
+        {outputLines.map((line, i) => (
+          <div key={i} className="whitespace-pre-wrap break-all text-gray-300 min-h-[1.5rem]">
+            <OutputBlock text={line} onLinkClick={handleLinkClick} />
+          </div>
         ))}
       </div>
 
