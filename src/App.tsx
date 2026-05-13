@@ -11,6 +11,7 @@ import { STANDARD_4STAGE_WORKFLOW } from './services/embeddedWorkflow';
 import { parseUserIntent } from './services/intentEngine';
 import { createDefaultLlmConfig, resolveLlmConfig, type LlmConfig } from './services/llmConfig';
 import { agentRunner, type AgentKeyInfo, type AgentSession } from './services/agentRunner';
+import { fileWatcher } from './services/fileWatcher';
 import type { ChatMessageData } from './components/ChatMessage';
 
 const STORAGE_KEY = 'cospace-v2-workspace';
@@ -91,6 +92,41 @@ function App() {
       addMessage('system', `Agent 会话已结束（退出码: ${code}）`);
     });
   }, [addMessage]);
+
+  // Track if we've suggested auto-advance for current stage
+  const [pendingAdvanceSuggestion, setPendingAdvanceSuggestion] = useState(false);
+
+  // Setup file watcher
+  useEffect(() => {
+    fileWatcher.on({
+      onStageOutputChanged: (stage, filePath) => {
+        if (!pendingAdvanceSuggestion) {
+          setPendingAdvanceSuggestion(true);
+          const fileName = filePath.split(/[\\/]/).pop() || filePath;
+          addMessage(
+            'assistant',
+            `📁 检测到阶段输出文件已更新：「${fileName}」。当前阶段「${stage.name}」是否已完成？输入"下一阶段"或"完成阶段"即可推进。`
+          );
+        }
+      },
+    });
+  }, [addMessage, pendingAdvanceSuggestion]);
+
+  // Start/stop file watcher when task changes
+  useEffect(() => {
+    if (currentTask) {
+      fileWatcher.setTask(currentTask);
+      fileWatcher.startWatching(currentTask.basePath).catch((err) => {
+        console.error('[Cospace] Failed to start file watcher:', err);
+      });
+    } else {
+      fileWatcher.stopWatching();
+    }
+    setPendingAdvanceSuggestion(false);
+    return () => {
+      fileWatcher.stopWatching();
+    };
+  }, [currentTask?.id, currentTask?.basePath]);
 
   // Create task from chat intent
   const createTaskFromIntent = useCallback(
@@ -280,6 +316,18 @@ function App() {
     if (updated) {
       setCurrentTask(updated);
       taskManager.saveToStorage();
+      setPendingAdvanceSuggestion(false);
+
+      // Auto-prepare next stage prompt
+      const nextStage = updated.stages.find((s) => s.status === 'running');
+      if (nextStage) {
+        addMessage(
+          'assistant',
+          `✅ 阶段完成！已自动推进到「${nextStage.name}」。\n\n**下一阶段提示词已就绪**，切换到 "Agent 运行" 标签页启动 Agent 即可自动注入。`
+        );
+      } else {
+        addMessage('assistant', '🎉 所有阶段已完成！任务结束。');
+      }
     }
   };
 
@@ -340,6 +388,7 @@ function App() {
     setAgentKeyInfos([]);
     setAgentRunning(false);
     setAgentSession(null);
+    setPendingAdvanceSuggestion(false);
     addSystemMessage(`已切换到任务「${task.name}」`);
   };
 
