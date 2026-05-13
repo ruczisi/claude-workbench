@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import type { Task } from '../services/taskManager';
 import { formatAgentInstructions } from '../services/agentInstructionUtils';
+import type { AgentKeyInfo, AgentSession } from '../services/agentRunner';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
+import AgentOutputPanel from './AgentOutputPanel';
 import type { ChatMessageData } from './ChatMessage';
 
 interface WorkbenchProps {
@@ -12,6 +14,14 @@ interface WorkbenchProps {
   chatMessages: ChatMessageData[];
   onSendChat?: (message: string) => void;
   chatLoading?: boolean;
+  // Agent runner props
+  agentSession?: AgentSession | null;
+  agentRunning?: boolean;
+  agentOutput?: string[];
+  agentKeyInfos?: AgentKeyInfo[];
+  onStartAgent?: () => void;
+  onStopAgent?: () => void;
+  onSendAgentInput?: (input: string) => void;
 }
 
 export default function Workbench({
@@ -21,8 +31,15 @@ export default function Workbench({
   chatMessages,
   onSendChat,
   chatLoading = false,
+  agentSession = null,
+  agentRunning = false,
+  agentOutput = [],
+  agentKeyInfos = [],
+  onStartAgent,
+  onStopAgent,
+  onSendAgentInput,
 }: WorkbenchProps) {
-  const [activePanel, setActivePanel] = useState<'chat' | 'agent'>('chat');
+  const [activePanel, setActivePanel] = useState<'chat' | 'agent-run' | 'agent-ctx'>('chat');
 
   const currentStage = task.currentStageId
     ? task.stages.find((s) => s.id === task.currentStageId)
@@ -148,9 +165,19 @@ export default function Workbench({
           💬 对话 ({chatMessages.filter((m) => m.role !== 'system').length})
         </button>
         <button
-          onClick={() => setActivePanel('agent')}
+          onClick={() => setActivePanel('agent-run')}
           className={`flex-1 py-2 text-xs font-medium ${
-            activePanel === 'agent'
+            activePanel === 'agent-run'
+              ? 'text-primary-400 border-b-2 border-primary-400'
+              : 'text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          🚀 Agent 运行 {agentRunning && <span className="ml-1 text-green-400">●</span>}
+        </button>
+        <button
+          onClick={() => setActivePanel('agent-ctx')}
+          className={`flex-1 py-2 text-xs font-medium ${
+            activePanel === 'agent-ctx'
               ? 'text-primary-400 border-b-2 border-primary-400'
               : 'text-gray-400 hover:text-gray-300'
           }`}
@@ -161,7 +188,7 @@ export default function Workbench({
 
       {/* Panel Content */}
       <div className="flex-1 flex flex-col min-h-0">
-        {activePanel === 'chat' ? (
+        {activePanel === 'chat' && (
           <>
             {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto p-4">
@@ -189,7 +216,21 @@ export default function Workbench({
               disabled={chatLoading}
             />
           </>
-        ) : (
+        )}
+
+        {activePanel === 'agent-run' && (
+          <AgentOutputPanel
+            session={agentSession}
+            isRunning={agentRunning}
+            outputHistory={agentOutput}
+            keyInfos={agentKeyInfos}
+            onStart={onStartAgent || (() => {})}
+            onStop={onStopAgent || (() => {})}
+            onSendInput={onSendAgentInput}
+          />
+        )}
+
+        {activePanel === 'agent-ctx' && (
           /* Agent Context Panel */
           <div className="flex-1 overflow-auto p-4">
             <div className="bg-gray-800 rounded-lg p-4">

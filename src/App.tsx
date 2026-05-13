@@ -10,6 +10,7 @@ import { taskManager, type Task } from './services/taskManager';
 import { STANDARD_4STAGE_WORKFLOW } from './services/embeddedWorkflow';
 import { parseUserIntent } from './services/intentEngine';
 import { createDefaultLlmConfig, resolveLlmConfig, type LlmConfig } from './services/llmConfig';
+import { agentRunner, type AgentKeyInfo, type AgentSession } from './services/agentRunner';
 import type { ChatMessageData } from './components/ChatMessage';
 
 const STORAGE_KEY = 'cospace-v2-workspace';
@@ -27,6 +28,12 @@ function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessageData[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
   const [llmConfig, setLlmConfig] = useState<LlmConfig>(createDefaultLlmConfig());
+
+  // Agent runner state
+  const [agentSession, setAgentSession] = useState<AgentSession | null>(null);
+  const [agentRunning, setAgentRunning] = useState(false);
+  const [agentOutput, setAgentOutput] = useState<string[]>([]);
+  const [agentKeyInfos, setAgentKeyInfos] = useState<AgentKeyInfo[]>([]);
 
   const {
     startupPhase,
@@ -68,6 +75,21 @@ function App() {
 
   const addSystemMessage = useCallback((content: string) => {
     addMessage('system', content);
+  }, [addMessage]);
+
+  // Setup agent runner callbacks
+  useEffect(() => {
+    agentRunner.onOutput((data) => {
+      setAgentOutput((prev) => [...prev, data]);
+    });
+    agentRunner.onKeyInfo((info) => {
+      setAgentKeyInfos((prev) => [...prev, info]);
+    });
+    agentRunner.onExit((code) => {
+      setAgentRunning(false);
+      setAgentSession(null);
+      addMessage('system', `Agent 会话已结束（退出码: ${code}）`);
+    });
   }, [addMessage]);
 
   // Create task from chat intent
@@ -261,12 +283,63 @@ function App() {
     }
   };
 
+  // Agent runner handlers
+  const handleStartAgent = async () => {
+    if (!currentTask?.currentStageId) {
+      addMessage('assistant', '没有正在进行的阶段，请先开始一个阶段。');
+      return;
+    }
+    const stage = currentTask.stages.find((s) => s.id === currentTask.currentStageId);
+    if (!stage) return;
+
+    // Get agent config from settings
+    try {
+      const cfg = await invoke<{ agent?: { type: string; customCommand?: string } }>('get_global_config');
+      const agentConfig = {
+        type: (cfg.agent?.type || 'claude') as 'claude' | 'codex' | 'custom',
+        customCommand: cfg.agent?.customCommand,
+      };
+
+      setAgentOutput([]);
+      setAgentKeyInfos([]);
+      setAgentRunning(true);
+      addMessage('system', `正在启动 Agent（${agentConfig.type}）...`);
+
+      await agentRunner.startAgent(currentTask, stage, agentConfig);
+      setAgentSession(agentRunner.session);
+      addMessage('system', 'Agent 已启动，正在执行任务...');
+    } catch (err) {
+      console.error('[Cospace] Failed to start agent:', err);
+      setAgentRunning(false);
+      addMessage('assistant', `启动 Agent 失败: ${err}`);
+    }
+  };
+
+  const handleStopAgent = async () => {
+    await agentRunner.stopAgent();
+    setAgentRunning(false);
+    setAgentSession(null);
+    addMessage('system', 'Agent 已停止');
+  };
+
+  const handleSendAgentInput = async (input: string) => {
+    try {
+      await agentRunner.sendInput(input);
+    } catch (err) {
+      console.error('[Cospace] Failed to send agent input:', err);
+    }
+  };
+
   // Select a task from history
   const handleSelectTask = (task: Task) => {
     setCurrentTask(task);
     setShowWorkbench(true);
-    // Clear chat when switching tasks
+    // Clear chat and agent state when switching tasks
     setChatMessages([]);
+    setAgentOutput([]);
+    setAgentKeyInfos([]);
+    setAgentRunning(false);
+    setAgentSession(null);
     addSystemMessage(`已切换到任务「${task.name}」`);
   };
 
@@ -355,6 +428,13 @@ function App() {
                 chatMessages={chatMessages}
                 onSendChat={handleSendChat}
                 chatLoading={chatLoading}
+                agentSession={agentSession}
+                agentRunning={agentRunning}
+                agentOutput={agentOutput}
+                agentKeyInfos={agentKeyInfos}
+                onStartAgent={handleStartAgent}
+                onStopAgent={handleStopAgent}
+                onSendAgentInput={handleSendAgentInput}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center text-gray-500">
