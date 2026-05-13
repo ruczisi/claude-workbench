@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import { readTextFile } from '@tauri-apps/plugin-fs';
 import { parseWorkflowContent, validateWorkflow, type WorkflowConfig } from './workflowParser';
+import { STANDARD_4STAGE_WORKFLOW } from './embeddedWorkflow';
 
 export interface TaskStage {
   id: string;
@@ -101,7 +102,98 @@ export class TaskManager {
   }
 
   getAllTasks(): Task[] {
-    return Array.from(this.tasks.values());
+    return Array.from(this.tasks.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  getTasksByStatus(status: Task['status']): Task[] {
+    return this.getAllTasks().filter((t) => t.status === status);
+  }
+
+  /** Serialize tasks to plain objects for storage */
+  serializeTasks(): Array<{
+    id: string;
+    name: string;
+    description?: string;
+    status: Task['status'];
+    basePath: string;
+    createdAt: string;
+    currentStageId?: string;
+    workflowName: string;
+    stages: Array<{
+      id: string;
+      name: string;
+      status: TaskStage['status'];
+    }>;
+  }> {
+    return this.getAllTasks().map((task) => ({
+      id: task.id,
+      name: task.name,
+      description: task.description,
+      status: task.status,
+      basePath: task.basePath,
+      createdAt: task.createdAt,
+      currentStageId: task.currentStageId,
+      workflowName: task.workflow.name,
+      stages: task.stages.map((s) => ({
+        id: s.id,
+        name: s.name,
+        status: s.status,
+      })),
+    }));
+  }
+
+  /** Restore tasks from serialized data (minimal reconstruction) */
+  loadTasks(data: Array<Record<string, unknown>>): void {
+    for (const item of data) {
+      // Reconstruct a minimal task with the standard workflow
+      const stageStatuses = new Map<string, string>();
+      if (Array.isArray(item.stages)) {
+        for (const s of item.stages as Array<{ id: string; status: string }>) {
+          stageStatuses.set(s.id, s.status);
+        }
+      }
+
+      const task: Task = {
+        id: String(item.id),
+        name: String(item.name),
+        description: item.description ? String(item.description) : undefined,
+        status: String(item.status) as Task['status'],
+        basePath: String(item.basePath),
+        createdAt: String(item.createdAt),
+        currentStageId: item.currentStageId ? String(item.currentStageId) : undefined,
+        workflow: STANDARD_4STAGE_WORKFLOW,
+        stages: STANDARD_4STAGE_WORKFLOW.stages.map((ws) => ({
+          id: ws.id,
+          name: ws.name,
+          description: ws.description,
+          outputs: ws.outputs,
+          agentContext: ws.agentContext,
+          status: (stageStatuses.get(ws.id) || 'pending') as TaskStage['status'],
+        })),
+      };
+      this.tasks.set(task.id, task);
+    }
+  }
+
+  /** Persist to localStorage */
+  saveToStorage(): void {
+    const data = this.serializeTasks();
+    localStorage.setItem('cospace-tasks', JSON.stringify(data));
+  }
+
+  /** Load from localStorage */
+  loadFromStorage(): void {
+    const stored = localStorage.getItem('cospace-tasks');
+    if (stored) {
+      try {
+        const data = JSON.parse(stored);
+        this.loadTasks(data);
+      } catch {
+        // Invalid data, ignore
+      }
+    }
   }
 
   // Start a stage: set it to 'running' and mark as current

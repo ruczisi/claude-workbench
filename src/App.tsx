@@ -21,6 +21,7 @@ function App() {
     const updated = taskManager.startStage(currentTask.id, stageId);
     if (updated) {
       setCurrentTask(updated);
+      taskManager.saveToStorage();
     }
   };
 
@@ -29,7 +30,14 @@ function App() {
     const updated = await taskManager.completeStage(currentTask.id, stageId);
     if (updated) {
       setCurrentTask(updated);
+      taskManager.saveToStorage();
     }
+  };
+
+  // Select a task from history
+  const handleSelectTask = (task: Task) => {
+    setCurrentTask(task);
+    setShowWorkbench(true);
   };
   const {
     startupPhase,
@@ -38,7 +46,7 @@ function App() {
     watchedPath,
   } = useAppStore();
 
-  // On mount: check for saved workspace
+  // On mount: check for saved workspace and load task history
   useEffect(() => {
     const savedPath = localStorage.getItem(STORAGE_KEY);
     if (savedPath) {
@@ -47,6 +55,8 @@ function App() {
     } else {
       setStartupPhase('select-workspace');
     }
+    // Load task history from localStorage
+    taskManager.loadFromStorage();
   }, [setWatchedPath, setStartupPhase]);
 
   // Handle workspace selection
@@ -92,6 +102,7 @@ function App() {
 
       setCurrentTask(task);
       setShowWorkbench(true);
+      taskManager.saveToStorage();
     } catch (err) {
       console.error('[Cospace] Failed to create demo task:', err);
       alert(`创建任务失败: ${err}`);
@@ -122,6 +133,8 @@ function App() {
           <Sidebar
             onCreateTask={handleCreateDemoTask}
             watchedPath={watchedPath}
+            currentTask={currentTask}
+            onSelectTask={handleSelectTask}
           />
 
           <div className="flex-1 flex flex-col border-x border-gray-700">
