@@ -14,6 +14,23 @@ function App() {
   const [theme] = useState<'dark' | 'light'>('dark');
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [showWorkbench, setShowWorkbench] = useState(false);
+
+  // Stage management callbacks
+  const handleStartStage = (stageId: string) => {
+    if (!currentTask) return;
+    const updated = taskManager.startStage(currentTask.id, stageId);
+    if (updated) {
+      setCurrentTask(updated);
+    }
+  };
+
+  const handleCompleteStage = async (stageId: string) => {
+    if (!currentTask) return;
+    const updated = await taskManager.completeStage(currentTask.id, stageId);
+    if (updated) {
+      setCurrentTask(updated);
+    }
+  };
   const {
     startupPhase,
     setStartupPhase,
@@ -109,7 +126,11 @@ function App() {
 
           <div className="flex-1 flex flex-col border-x border-gray-700">
             {showWorkbench && currentTask ? (
-              <Workbench task={currentTask} />
+              <Workbench
+                task={currentTask}
+                onStartStage={handleStartStage}
+                onCompleteStage={handleCompleteStage}
+              />
             ) : (
               <div className="flex-1 flex items-center justify-center text-gray-500">
                 <div className="text-center">
@@ -127,7 +148,7 @@ function App() {
             )}
           </div>
 
-          <Preview />
+          <Preview task={currentTask} />
         </div>
       )}
     </div>

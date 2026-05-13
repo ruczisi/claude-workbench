@@ -103,6 +103,78 @@ export class TaskManager {
   getAllTasks(): Task[] {
     return Array.from(this.tasks.values());
   }
+
+  // Start a stage: set it to 'running' and mark as current
+  startStage(taskId: string, stageId: string): Task | undefined {
+    const task = this.tasks.get(taskId);
+    if (!task) return undefined;
+
+    const stage = task.stages.find((s) => s.id === stageId);
+    if (!stage || stage.status !== 'pending') return undefined;
+
+    stage.status = 'running';
+    task.currentStageId = stageId;
+    task.status = 'running';
+
+    return { ...task, stages: [...task.stages] };
+  }
+
+  // Complete a stage: mark as completed, advance to next pending stage
+  async completeStage(taskId: string, stageId: string): Promise<Task | undefined> {
+    const task = this.tasks.get(taskId);
+    if (!task) return undefined;
+
+    const stageIndex = task.stages.findIndex((s) => s.id === stageId);
+    if (stageIndex === -1) return undefined;
+
+    const stage = task.stages[stageIndex];
+    if (stage.status !== 'running') return undefined;
+
+    stage.status = 'completed';
+
+    // Generate output documents for this stage
+    await this.generateStageOutputs(task, stage);
+
+    // Find next pending stage
+    const nextStage = task.stages.slice(stageIndex + 1).find((s) => s.status === 'pending');
+    if (nextStage) {
+      task.currentStageId = nextStage.id;
+    } else {
+      // All stages completed
+      task.currentStageId = undefined;
+      task.status = 'completed';
+    }
+
+    return { ...task, stages: [...task.stages] };
+  }
+
+  // Generate Markdown output files for a stage
+  private async generateStageOutputs(task: Task, stage: TaskStage): Promise<void> {
+    const timestamp = new Date().toISOString().split('T')[0];
+
+    for (const output of stage.outputs) {
+      const filePath = await join(task.basePath, output.path);
+      const content = `# ${output.name}
+
+> 任务：${task.name}
+> 阶段：${stage.name}
+> 生成时间：${timestamp}
+
+---
+
+${stage.agentContext}
+
+---
+
+*此文档由 Cospace 自动生成，请在上方补充具体内容。*
+`;
+      try {
+        await invoke('write_text_file_command', { path: filePath, content });
+      } catch (err) {
+        console.error(`[Cospace] Failed to write output file ${filePath}:`, err);
+      }
+    }
+  }
 }
 
 // Singleton instance

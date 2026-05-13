@@ -168,6 +168,22 @@ pub fn ensure_directory(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 写入文本文件
+pub fn write_text_file(path: &str, content: &str) -> Result<(), String> {
+    let resolved = resolve_path(path)?;
+
+    // 确保父目录存在
+    if let Some(parent) = resolved.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+
+    std::fs::write(&resolved, content)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(())
+}
+
 /// 路径是否存在
 pub fn path_exists(path: &str) -> bool {
     match resolve_path(path) {
@@ -296,4 +312,25 @@ pub fn init_global_config() -> Result<GlobalConfig, String> {
     } else {
         load_config::<GlobalConfig>(path.to_str().unwrap_or(""))
     }
+}
+
+/// 读取文本文件（绕过前端权限限制）
+pub fn read_text_file(path: &str) -> Result<String, String> {
+    let resolved = resolve_path(path)?;
+
+    std::fs::read_to_string(&resolved)
+        .map_err(|e| format!("Failed to read file: {}", e))
+}
+
+/// 写入文本文件（绕过前端权限限制）
+#[tauri::command]
+pub fn write_text_file_command(path: String, content: String) -> Result<(), String> {
+    write_text_file(&path, &content)?;
+    Ok(())
+}
+
+/// 读取文本文件（绕过前端权限限制）
+#[tauri::command]
+pub fn read_text_file_command(path: String) -> Result<String, String> {
+    read_text_file(&path)
 }
