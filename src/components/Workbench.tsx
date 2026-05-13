@@ -1,13 +1,29 @@
+import { useState } from 'react';
 import type { Task } from '../services/taskManager';
 import { formatAgentInstructions } from '../services/agentInstructionUtils';
+import ChatMessage from './ChatMessage';
+import ChatInput from './ChatInput';
+import type { ChatMessageData } from './ChatMessage';
 
 interface WorkbenchProps {
   task: Task;
   onStartStage?: (stageId: string) => void;
   onCompleteStage?: (stageId: string) => void;
+  chatMessages: ChatMessageData[];
+  onSendChat?: (message: string) => void;
+  chatLoading?: boolean;
 }
 
-export default function Workbench({ task, onStartStage, onCompleteStage }: WorkbenchProps) {
+export default function Workbench({
+  task,
+  onStartStage,
+  onCompleteStage,
+  chatMessages,
+  onSendChat,
+  chatLoading = false,
+}: WorkbenchProps) {
+  const [activePanel, setActivePanel] = useState<'chat' | 'agent'>('chat');
+
   const currentStage = task.currentStageId
     ? task.stages.find((s) => s.id === task.currentStageId)
     : undefined;
@@ -39,7 +55,6 @@ export default function Workbench({ task, onStartStage, onCompleteStage }: Workb
         <div className="flex items-center gap-2">
           {task.stages.map((stage, index) => (
             <div key={stage.id} className="flex items-center">
-              {/* Stage dot */}
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                   stage.status === 'completed'
@@ -53,9 +68,7 @@ export default function Workbench({ task, onStartStage, onCompleteStage }: Workb
               >
                 {stage.status === 'completed' ? '✓' : index + 1}
               </div>
-              {/* Stage name */}
               <span className="ml-2 text-sm text-gray-300">{stage.name}</span>
-              {/* Connector */}
               {index < task.stages.length - 1 && (
                 <div className="w-8 h-0.5 bg-gray-700 mx-1" />
               )}
@@ -122,36 +135,93 @@ export default function Workbench({ task, onStartStage, onCompleteStage }: Workb
         )}
       </div>
 
-      {/* Agent Context Display */}
-      <div className="flex-1 p-4 overflow-auto">
-        <div className="bg-gray-800 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-gray-300">Agent 上下文</h3>
-            {currentStage && (
-              <button
-                onClick={async () => {
-                  try {
-                    const text = formatAgentInstructions(task, currentStage);
-                    await navigator.clipboard.writeText(text);
-                    alert('Agent 指令已复制到剪贴板，请粘贴到你的 Agent 客户端（如 Claude Code、Cursor）');
-                  } catch {
-                    alert('复制失败，请手动复制');
-                  }
-                }}
-                className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
-              >
-                复制 Agent 指令
-              </button>
-            )}
+      {/* Panel Tabs */}
+      <div className="flex border-b border-gray-700 bg-gray-800">
+        <button
+          onClick={() => setActivePanel('chat')}
+          className={`flex-1 py-2 text-xs font-medium ${
+            activePanel === 'chat'
+              ? 'text-primary-400 border-b-2 border-primary-400'
+              : 'text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          💬 对话 ({chatMessages.filter((m) => m.role !== 'system').length})
+        </button>
+        <button
+          onClick={() => setActivePanel('agent')}
+          className={`flex-1 py-2 text-xs font-medium ${
+            activePanel === 'agent'
+              ? 'text-primary-400 border-b-2 border-primary-400'
+              : 'text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          🤖 Agent 指令
+        </button>
+      </div>
+
+      {/* Panel Content */}
+      <div className="flex-1 flex flex-col min-h-0">
+        {activePanel === 'chat' ? (
+          <>
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {chatMessages.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <p className="text-sm mb-2">💡 试试这些指令：</p>
+                    <div className="space-y-1 text-xs text-gray-600">
+                      <p>"帮我写个贵港供销社合作方案"</p>
+                      <p>"开始需求确认阶段"</p>
+                      <p>"下一阶段"</p>
+                      <p>"这一阶段完成了"</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                chatMessages.map((msg) => (
+                  <ChatMessage key={msg.id} message={msg} />
+                ))
+              )}
+            </div>
+            {/* Chat Input */}
+            <ChatInput
+              onSend={onSendChat || (() => {})}
+              disabled={chatLoading}
+            />
+          </>
+        ) : (
+          /* Agent Context Panel */
+          <div className="flex-1 overflow-auto p-4">
+            <div className="bg-gray-800 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-300">Agent 上下文</h3>
+                {currentStage && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const text = formatAgentInstructions(task, currentStage);
+                        await navigator.clipboard.writeText(text);
+                        alert('Agent 指令已复制到剪贴板，请粘贴到你的 Agent 客户端（如 Claude Code、Cursor）');
+                      } catch {
+                        alert('复制失败，请手动复制');
+                      }
+                    }}
+                    className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+                  >
+                    复制 Agent 指令
+                  </button>
+                )}
+              </div>
+              <pre className="text-xs text-gray-400 whitespace-pre-wrap font-mono bg-gray-900 p-3 rounded">
+                {currentStage?.agentContext || '暂无活跃阶段'}
+              </pre>
+            </div>
           </div>
-          <pre className="text-xs text-gray-400 whitespace-pre-wrap font-mono bg-gray-900 p-3 rounded">
-            {currentStage?.agentContext || '暂无活跃阶段'}
-          </pre>
-        </div>
+        )}
       </div>
 
       {/* Stage List */}
-      <div className="p-4 border-t border-gray-700">
+      <div className="p-4 border-t border-gray-700 max-h-48 overflow-y-auto">
         <h3 className="text-sm font-medium text-gray-300 mb-2">阶段详情</h3>
         <div className="space-y-2">
           {task.stages.map((stage, index) => (
