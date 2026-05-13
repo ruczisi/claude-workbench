@@ -1,4 +1,5 @@
 import type { Task } from '../services/taskManager';
+import { formatAgentInstructions } from '../services/agentInstructionUtils';
 
 interface WorkbenchProps {
   task: Task;
@@ -124,7 +125,25 @@ export default function Workbench({ task, onStartStage, onCompleteStage }: Workb
       {/* Agent Context Display */}
       <div className="flex-1 p-4 overflow-auto">
         <div className="bg-gray-800 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-gray-300 mb-2">Agent 上下文</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-gray-300">Agent 上下文</h3>
+            {currentStage && (
+              <button
+                onClick={async () => {
+                  try {
+                    const text = formatAgentInstructions(task, currentStage);
+                    await navigator.clipboard.writeText(text);
+                    alert('Agent 指令已复制到剪贴板，请粘贴到你的 Agent 客户端（如 Claude Code、Cursor）');
+                  } catch {
+                    alert('复制失败，请手动复制');
+                  }
+                }}
+                className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+              >
+                复制 Agent 指令
+              </button>
+            )}
+          </div>
           <pre className="text-xs text-gray-400 whitespace-pre-wrap font-mono bg-gray-900 p-3 rounded">
             {currentStage?.agentContext || '暂无活跃阶段'}
           </pre>

@@ -240,26 +240,43 @@ export class TaskManager {
     return { ...task, stages: [...task.stages] };
   }
 
-  // Generate Markdown output files for a stage
+  // Generate Markdown output files for a stage (structured for Agent execution)
   private async generateStageOutputs(task: Task, stage: TaskStage): Promise<void> {
     const timestamp = new Date().toISOString().split('T')[0];
 
     for (const output of stage.outputs) {
       const filePath = await join(task.basePath, output.path);
+
       const content = `# ${output.name}
 
 > 任务：${task.name}
 > 阶段：${stage.name}
+> 输出文件：${output.name}
 > 生成时间：${timestamp}
 
 ---
+
+## Agent 指令
 
 ${stage.agentContext}
 
 ---
 
-*此文档由 Cospace 自动生成，请在上方补充具体内容。*
+## 任务信息
+
+- **项目名称**：${task.name}
+- **当前阶段**：${stage.name}
+- **阶段目标**：${stage.description}
+- **预期输出**：${output.name}
+
+---
+
+## 输出区域
+
+<!-- 请将 Agent 生成的内容写在此区域下方 -->
+
 `;
+
       try {
         await invoke('write_text_file_command', { path: filePath, content });
       } catch (err) {

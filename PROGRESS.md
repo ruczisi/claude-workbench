@@ -24,7 +24,7 @@
 - [x] 阶段输出文档自动生成（写入 Markdown 到对应子目录）
 - [x] Preview 面板内容预览（文件列表 + Markdown 渲染）
 - [x] 任务历史列表（Sidebar 历史标签 + localStorage 持久化）
-- [ ] Agent 上下文实际运行（调用 AI 生成阶段内容）
+- [x] Agent 上下文实际运行（生成结构化 Agent 指令文件 + 一键复制到剪贴板）
 - [ ] 设置面板功能实现
 - [ ] 自定义 workflow 加载 / 编辑
 - [ ] 任务历史列表

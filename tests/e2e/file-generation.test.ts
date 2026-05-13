@@ -92,7 +92,8 @@ describe('File Generation Integration', () => {
       expect(content).toContain('#');
       expect(content).toContain('任务：');
       expect(content).toContain('阶段：');
-      expect(content).toContain('Cospace');
+      expect(content).toContain('Agent 指令');
+      expect(content).toContain('输出区域');
     }
   });
 });
