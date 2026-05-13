@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { optimizeAgentPrompt, type OptimizedPrompt } from './promptOptimizer';
 import type { Task, TaskStage } from './taskManager';
+import type { KnowledgeResult } from './knowledgeBase';
 
 export interface AgentConfig {
   type: 'claude' | 'codex' | 'custom';
@@ -82,14 +83,15 @@ export class AgentRunner {
   async startAgent(
     task: Task,
     stage: TaskStage,
-    agentConfig: AgentConfig
+    agentConfig: AgentConfig,
+    knowledgeResults?: KnowledgeResult[]
   ): Promise<void> {
     if (this.currentSession?.isRunning) {
       throw new Error('已有 Agent 会话在运行，请先停止');
     }
 
-    // 1. 生成优化提示词
-    const optimizedPrompt = optimizeAgentPrompt({ task, stage });
+    // 1. 生成优化提示词（注入知识库上下文）
+    const optimizedPrompt = optimizeAgentPrompt({ task, stage, knowledgeResults });
 
     // 2. 创建会话 ID
     const sessionId = `agent-${task.id}-${stage.id}-${Date.now()}`;

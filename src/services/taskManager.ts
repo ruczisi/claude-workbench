@@ -120,7 +120,7 @@ export class TaskManager {
     basePath: string;
     createdAt: string;
     currentStageId?: string;
-    workflowName: string;
+    workflow: WorkflowConfig;
     stages: Array<{
       id: string;
       name: string;
@@ -135,7 +135,7 @@ export class TaskManager {
       basePath: task.basePath,
       createdAt: task.createdAt,
       currentStageId: task.currentStageId,
-      workflowName: task.workflow.name,
+      workflow: task.workflow,
       stages: task.stages.map((s) => ({
         id: s.id,
         name: s.name,
@@ -147,7 +147,16 @@ export class TaskManager {
   /** Restore tasks from serialized data (minimal reconstruction) */
   loadTasks(data: Array<Record<string, unknown>>): void {
     for (const item of data) {
-      // Reconstruct a minimal task with the standard workflow
+      // Restore workflow: prefer saved full workflow, fall back to standard
+      let workflow: WorkflowConfig = STANDARD_4STAGE_WORKFLOW;
+      if (item.workflow && typeof item.workflow === 'object') {
+        const w = item.workflow as Record<string, unknown>;
+        if (Array.isArray(w.stages) && typeof w.name === 'string') {
+          workflow = w as unknown as WorkflowConfig;
+        }
+      }
+
+      // Reconstruct stage statuses from saved data
       const stageStatuses = new Map<string, string>();
       if (Array.isArray(item.stages)) {
         for (const s of item.stages as Array<{ id: string; status: string }>) {
@@ -163,8 +172,8 @@ export class TaskManager {
         basePath: String(item.basePath),
         createdAt: String(item.createdAt),
         currentStageId: item.currentStageId ? String(item.currentStageId) : undefined,
-        workflow: STANDARD_4STAGE_WORKFLOW,
-        stages: STANDARD_4STAGE_WORKFLOW.stages.map((ws) => ({
+        workflow,
+        stages: workflow.stages.map((ws) => ({
           id: ws.id,
           name: ws.name,
           description: ws.description,

@@ -12,7 +12,11 @@ import { parseUserIntent } from './services/intentEngine';
 import { createDefaultLlmConfig, resolveLlmConfig, type LlmConfig } from './services/llmConfig';
 import { agentRunner, type AgentKeyInfo, type AgentSession } from './services/agentRunner';
 import { fileWatcher } from './services/fileWatcher';
+// TODO(v0.3.0): Re-enable when App.tsx integration is complete
+// import { workflowManager, type SavedWorkflow } from './services/workflowManager';
+// import { knowledgeBase } from './services/knowledgeBase';
 import type { ChatMessageData } from './components/ChatMessage';
+// import type { WorkflowConfig } from './services/workflowParser';
 
 const STORAGE_KEY = 'cospace-v2-workspace';
 

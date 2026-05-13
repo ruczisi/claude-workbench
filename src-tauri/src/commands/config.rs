@@ -10,6 +10,16 @@ pub struct PathResolution {
     pub exists: bool,
 }
 
+/// 知识库配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeBaseConfig {
+    pub root_path: String,
+    pub concepts_dir: String,
+    pub projects_dir: String,
+    pub auto_inject: bool,
+    pub max_results: u32,
+}
+
 /// 全局配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalConfig {
@@ -20,6 +30,7 @@ pub struct GlobalConfig {
     pub llm: Option<LlmConfig>,
     pub search: Option<SearchConfig>,
     pub ui: Option<UiConfig>,
+    pub knowledge_base: Option<KnowledgeBaseConfig>,
 }
 
 /// 知识资产路径配置
@@ -206,11 +217,11 @@ pub fn path_exists(path: &str) -> bool {
 pub fn default_global_config() -> GlobalConfig {
     GlobalConfig {
         assets: AssetPaths {
-            templates: "~/notebook/templates".to_string(),
-            data: "~/notebook/data".to_string(),
-            references: "~/notebook/references".to_string(),
-            cases: "~/notebook/cases".to_string(),
-            scripts: Some("~/notebook/scripts".to_string()),
+            templates: "".to_string(),
+            data: "".to_string(),
+            references: "".to_string(),
+            cases: "".to_string(),
+            scripts: Some("".to_string()),
         },
         workflows: Some("~/.cospace/workflows".to_string()),
         default_workflow: Some("standard-4stage".to_string()),
@@ -226,6 +237,7 @@ pub fn default_global_config() -> GlobalConfig {
             sidebar_width: Some(200),
             preview_width: Some(450),
         }),
+        knowledge_base: None,
     }
 }
 

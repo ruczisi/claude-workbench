@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../stores/appStore';
 import { taskManager } from '../services/taskManager';
 import type { Task } from '../services/taskManager';
+import { type SavedWorkflow } from '../services/workflowManager';
+import type { WorkflowConfig } from '../services/workflowParser';
 import {
   LLM_PRESET_MODELS,
   getDefaultBaseUrl,
@@ -16,6 +19,11 @@ interface SidebarProps {
   watchedPath: string | null;
   currentTask: Task | null;
   onSelectTask?: (task: Task) => void;
+  workflows?: SavedWorkflow[];
+  onUseWorkflow?: (workflow: WorkflowConfig) => void;
+  knowledgeBasePath?: string | null;
+  kbStats?: { total: number };
+  onSelectKnowledgeBase?: () => void;
 }
 
 interface GlobalConfig {
@@ -27,7 +35,17 @@ interface GlobalConfig {
   llm?: LlmConfig;
 }
 
-export default function Sidebar({ onCreateTask, watchedPath, currentTask, onSelectTask }: SidebarProps) {
+export default function Sidebar({
+  onCreateTask,
+  watchedPath,
+  currentTask,
+  onSelectTask,
+  workflows,
+  onUseWorkflow,
+  knowledgeBasePath,
+  kbStats,
+  onSelectKnowledgeBase,
+}: SidebarProps) {
   const { activeTab, setActiveTab } = useAppStore();
   const tasks = taskManager.getAllTasks();
 
@@ -184,6 +202,18 @@ export default function Sidebar({ onCreateTask, watchedPath, currentTask, onSele
           <span className="text-xs mt-1">历史</span>
         </button>
         <button
+          onClick={() => setActiveTab('workflows')}
+          className={`flex-1 p-3 flex flex-col items-center justify-center ${
+            activeTab === 'workflows'
+              ? 'bg-gray-700 text-primary-400 border-b-2 border-primary-400'
+              : 'text-gray-400 hover:bg-gray-700/50'
+          }`}
+          title="工作流"
+        >
+          <span className="text-xl">📋</span>
+          <span className="text-xs mt-1">工作流</span>
+        </button>
+        <button
           onClick={() => setActiveTab('settings')}
           className={`flex-1 p-3 flex flex-col items-center justify-center ${
             activeTab === 'settings'
@@ -252,6 +282,44 @@ export default function Sidebar({ onCreateTask, watchedPath, currentTask, onSele
                       </span>
                     </div>
                   </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === 'workflows' && (
+          <>
+            <div className="text-xs text-gray-500 px-1 mb-2">工作流列表</div>
+            {!workflows || workflows.length === 0 ? (
+              <div className="text-xs text-gray-500 italic px-2 py-4 text-center">
+                暂无工作流
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {workflows.map((workflow) => (
+                  <div
+                    key={workflow.id}
+                    className="bg-gray-900 rounded p-2"
+                  >
+                    <div className="text-xs font-medium text-gray-200 truncate">
+                      {workflow.name}
+                    </div>
+                    {workflow.description && (
+                      <div className="text-xs text-gray-500 mt-1 truncate">
+                        {workflow.description}
+                      </div>
+                    )}
+                    <div className="text-xs text-gray-500 mt-1">
+                      {workflow.config.stages.length} 个阶段
+                    </div>
+                    <button
+                      onClick={() => onUseWorkflow?.(workflow.config)}
+                      className="mt-2 w-full px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 rounded text-white"
+                    >
+                      使用此工作流
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -405,6 +473,47 @@ export default function Sidebar({ onCreateTask, watchedPath, currentTask, onSele
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Knowledge Base Configuration */}
+            <div className="bg-gray-900 rounded p-3">
+              <h3 className="text-xs font-medium text-primary-400 mb-3">📚 知识库配置</h3>
+
+              <div className="space-y-3">
+                {/* Knowledge Base Path */}
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">知识库根目录</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={knowledgeBasePath || ''}
+                      readOnly
+                      className="flex-1 text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 focus:outline-none focus:border-primary-500"
+                      placeholder="选择知识库目录"
+                    />
+                    <button
+                      onClick={async () => {
+                        try {
+                          const selected = await open({ directory: true });
+                          if (selected && typeof selected === 'string') {
+                            onSelectKnowledgeBase?.();
+                          }
+                        } catch {
+                          // Dialog cancelled or error
+                        }
+                      }}
+                      className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300 whitespace-nowrap"
+                    >
+                      浏览
+                    </button>
+                  </div>
+                  {knowledgeBasePath && kbStats && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      共 {kbStats.total} 篇文档
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Save Button */}

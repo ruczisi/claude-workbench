@@ -151,5 +151,68 @@ describe('promptOptimizer', () => {
 
       expect(result.text).toContain(task.description);
     });
+
+    it('should inject knowledge results into prompt when provided', () => {
+      const task = createMockTask();
+      const knowledgeResults = [
+        {
+          title: '供应链数字化',
+          description: '数字化供应链管理的概念与实践',
+          type: 'concept',
+          tags: ['supply-chain', 'digital'],
+          path: '20-Wiki/Concepts/supply-chain-digital.md',
+          relevance: 0.85,
+        },
+        {
+          title: '贵港供销社项目',
+          description: '贵港供销社南北大通道项目档案',
+          type: 'project',
+          tags: ['guigang', 'project'],
+          path: '20-Wiki/Projects/guigang.md',
+          relevance: 0.92,
+        },
+      ];
+      const context: PromptContext = {
+        task,
+        stage: task.stages[0],
+        knowledgeResults,
+      };
+
+      const result = optimizeAgentPrompt(context);
+
+      expect(result.text).toContain('## 相关知识');
+      expect(result.text).toContain('供应链数字化');
+      expect(result.text).toContain('concept');
+      expect(result.text).toContain('数字化供应链管理的概念与实践');
+      expect(result.text).toContain('20-Wiki/Concepts/supply-chain-digital.md');
+      expect(result.text).toContain('贵港供销社项目');
+      expect(result.text).toContain('project');
+      expect(result.text).toContain('20-Wiki/Projects/guigang.md');
+    });
+
+    it('should not include knowledge section when knowledgeResults is empty', () => {
+      const task = createMockTask();
+      const context: PromptContext = {
+        task,
+        stage: task.stages[0],
+        knowledgeResults: [],
+      };
+
+      const result = optimizeAgentPrompt(context);
+
+      expect(result.text).not.toContain('## 相关知识');
+    });
+
+    it('should not include knowledge section when knowledgeResults is undefined', () => {
+      const task = createMockTask();
+      const context: PromptContext = {
+        task,
+        stage: task.stages[0],
+      };
+
+      const result = optimizeAgentPrompt(context);
+
+      expect(result.text).not.toContain('## 相关知识');
+    });
   });
 });

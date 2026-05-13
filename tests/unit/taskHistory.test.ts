@@ -53,7 +53,7 @@ describe('TaskManager - Task History', () => {
       expect(serialized[0].stages).toHaveLength(4);
     });
 
-    it('should exclude workflow from serialization', async () => {
+    it('should include full workflow in serialization', async () => {
       await manager.createTaskFromWorkflow(
         'Test',
         STANDARD_4STAGE_WORKFLOW,
@@ -61,8 +61,9 @@ describe('TaskManager - Task History', () => {
       );
 
       const serialized = manager.serializeTasks();
-      expect(serialized[0].workflowName).toBe('标准四阶段工作流');
-      expect(serialized[0]).not.toHaveProperty('workflow');
+      expect(serialized[0].workflow).toBeDefined();
+      expect(serialized[0].workflow.name).toBe('标准四阶段工作流');
+      expect(serialized[0].workflow.stages).toHaveLength(4);
     });
 
     it('should include stage statuses in serialization', async () => {
@@ -92,7 +93,7 @@ describe('TaskManager - Task History', () => {
           basePath: '/restored/path',
           createdAt: '2026-05-13T00:00:00Z',
           currentStageId: 'demand',
-          workflowName: '标准四阶段工作流',
+          workflow: STANDARD_4STAGE_WORKFLOW,
           stages: [
             { id: 'demand', name: '需求确认', status: 'completed' },
             { id: 'framework', name: '框架构思', status: 'running' },

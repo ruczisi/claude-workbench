@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Task, TaskStage } from '../services/taskManager';
 
 export type AgentType = 'claude' | 'codex' | 'custom';
-export type SidebarTab = 'workspace' | 'history' | 'settings';
+export type SidebarTab = 'workspace' | 'history' | 'workflows' | 'settings';
 export type StartupPhase = 'loading' | 'select-workspace' | 'ready';
 
 interface AppState {

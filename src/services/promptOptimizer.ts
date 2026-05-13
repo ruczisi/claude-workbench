@@ -1,8 +1,10 @@
 import type { Task, TaskStage } from './taskManager';
+import type { KnowledgeResult } from './knowledgeBase';
 
 export interface PromptContext {
   task: Task;
   stage: TaskStage;
+  knowledgeResults?: KnowledgeResult[];
 }
 
 export interface ExpectedOutput {
@@ -28,7 +30,7 @@ export interface OptimizedPrompt {
  * 生成结构清晰、上下文完整的提示词，便于 Agent 工具直接执行。
  */
 export function optimizeAgentPrompt(context: PromptContext): OptimizedPrompt {
-  const { task, stage } = context;
+  const { task, stage, knowledgeResults } = context;
 
   const keyInstructions = extractKeyInstructions(stage.agentContext);
 
@@ -37,7 +39,7 @@ export function optimizeAgentPrompt(context: PromptContext): OptimizedPrompt {
     path: o.path,
   }));
 
-  const text = buildPromptText(task, stage, expectedOutputs);
+  const text = buildPromptText(task, stage, expectedOutputs, knowledgeResults);
 
   return {
     text,
@@ -68,7 +70,8 @@ function extractKeyInstructions(agentContext: string): string[] {
 function buildPromptText(
   task: Task,
   stage: TaskStage,
-  outputs: ExpectedOutput[]
+  outputs: ExpectedOutput[],
+  knowledgeResults?: KnowledgeResult[]
 ): string {
   const parts: string[] = [];
 
@@ -98,6 +101,18 @@ function buildPromptText(
     parts.push(`## 预期输出`);
     for (const output of outputs) {
       parts.push('- `' + output.path + '` — ' + output.name);
+    }
+    parts.push('');
+  }
+
+  // Knowledge base context injection
+  if (knowledgeResults && knowledgeResults.length > 0) {
+    parts.push(`## 相关知识`);
+    for (const kr of knowledgeResults) {
+      parts.push(`- **${kr.title}** (${kr.type}) — ${kr.description}`);
+      if (kr.path) {
+        parts.push(`  来源：${kr.path}`);
+      }
     }
     parts.push('');
   }
