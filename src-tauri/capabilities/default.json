@@ -9,9 +9,19 @@
     "shell:allow-execute",
     "fs:default",
     "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-mkdir",
     "fs:allow-watch",
     "dialog:default",
     "dialog:allow-open",
-    "notification:default"
+    "notification:default",
+    {
+      "identifier": "fs:allow-write",
+      "allow": [{ "path": "$CWD/**" }, { "path": "$RESOURCE/**" }]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [{ "path": "$CWD/**" }]
+    }
   ]
 }

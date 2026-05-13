@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd F:/claude-workbench && npx tsc --noEmit 2>&1\",\"timeout\":120000,\"description\":\"TypeScript type check\"}",
-  "error": "Exit code 2\nsrc/stores/appStore.ts(5,13): error TS2300: Duplicate identifier 'AgentStatus'.\r\nsrc/stores/appStore.ts(75,13): error TS2300: Duplicate identifier 'AgentStatus'.",
-  "timestamp": "2026-05-08T06:58:11.228Z",
-  "retry_count": 1
-}

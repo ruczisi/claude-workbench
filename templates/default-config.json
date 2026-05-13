@@ -1,0 +1,19 @@
+{
+  "assets": {
+    "templates": "~/notebook/templates",
+    "data": "~/notebook/data",
+    "references": "~/notebook/references",
+    "cases": "~/notebook/cases"
+  },
+  "workflows": "~/.cospace/workflows",
+  "defaultWorkflow": "standard-4stage",
+  "agent": {
+    "type": "claude",
+    "autoStart": true
+  },
+  "ui": {
+    "theme": "dark",
+    "sidebarWidth": 200,
+    "previewWidth": 450
+  }
+}

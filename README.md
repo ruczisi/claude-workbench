@@ -1,50 +1,60 @@
-# Cospace
+# Cospace v2.0
 
-> 一个集成 AI Agent 的可视化工作台，让 AI 助手与内容预览无缝衔接。
+> Agent 驱动的可视化工作台。基于四阶段工作流（需求确认 → 框架构思 → 内容撰写 → 审核定稿），让方案撰写从混沌到有序。
 
-## 功能特性
+## 当前版本
 
-- **AI Agent 集成** — 支持 Claude Code / Codex / OpenCode，自动检测 PATH 中的 Agent 并启动
-- **终端模拟** — xterm.js 驱动的终端，Agent 输出实时显示
-- **工作区管理** — 选择文件夹作为工作区，自动启动文件监听
-- **内容预览** — Markdown、HTML、图片、PDF、视频直接预览
-- **Team 状态监控** — 任务进度和异常告警一目了然
-- **VS Code 风格布局** — 左导航 + 中终端 + 右预览，高效协同
-- **多主题支持** — 深色/浅色主题切换
+**v0.2.0-alpha** — 基础框架已跑通，交互推进待实现。
+
+## 已实现
+
+- **工作区管理** — 选择本地文件夹作为工作区，自动记忆
+- **四阶段任务创建** — 内嵌标准工作流，一键生成任务目录结构
+- **可视化进度** — Workbench 展示任务名称、阶段进度条、当前阶段信息
+- **Rust 后端目录创建** — 绕过前端权限限制，任务文件夹可靠生成
+
+## 待实现
+
+- [ ] 阶段交互推进（开始 / 完成 / 跳转到下一阶段）
+- [ ] Agent 上下文实际运行（调用 AI 生成内容）
+- [ ] 阶段输出文档自动生成（Markdown 文件写入）
+- [ ] Preview 面板内容预览
+- [ ] 设置面板功能
+- [ ] 自定义 workflow 加载与编辑
+- [ ] 任务历史列表
 
 ## 快速开始
 
-### 安装
-
-下载并运行安装程序：
-- [MSI 安装包](./src-tauri/target/release/bundle/msi/Cospace_0.1.0_x64_en-US.msi)
-- [NSIS 安装程序](./src-tauri/target/release/bundle/nsis/Cospace_0.1.0_x64-setup.exe)
-
-或直接运行可执行文件：
-```
+```bash
+# 1. 运行程序
 src-tauri\target\release\cospace.exe
+
+# 2. 选择工作区 — 点击"选择工作区"，指定项目文件夹
+
+# 3. 创建示例任务 — 点击侧边栏"+ 创建示例任务"，
+#    任务将创建在工作区下的 tasks/demo-task/ 中，
+#    并自动生成 4 个阶段子目录。
 ```
 
-### 使用
+## 任务目录结构
 
-1. **启动应用** — 运行 cospace.exe
-2. **选择工作区** — 点击侧边栏"选择工作区"，选择项目文件夹
-3. **配置 Agent** — 在设置中选择 Agent 类型（Claude/Codex/OpenCode/自定义）
-4. **开启自动启动** — 打开"选择工作区后自动启动"开关
-5. **开始工作** — 每次选择工作区后，Agent 会自动启动
-
-### 环境要求
-
-- Windows 10/11 (x64)
-- 需要在系统 PATH 中有对应的 AI Agent 命令（claude / codex / opencode）
+```
+你的工作区/
+└── tasks/
+    └── demo-task/
+        ├── 00-阶段1-需求确认/
+        ├── 00-阶段2-框架构思/
+        ├── 00-阶段3-内容撰写/
+        └── 00-阶段4-审核定稿/
+```
 
 ## 技术栈
 
-- **Tauri 2.x** — 轻量、安全的桌面框架
-- **React 19 + TypeScript** — 前端框架
-- **TailwindCSS** — 样式解决方案
-- **xterm.js** — 终端模拟器
-- **Rust + portable-pty** — Agent 进程管理
+- **Tauri 2.x** — 轻量桌面框架（Rust + Webview）
+- **React 19 + TypeScript** — 前端
+- **TailwindCSS** — 样式
+- **Zustand** — 状态管理
+- **Rust** — 后端命令（目录创建、配置管理）
 
 ## 开发
 
@@ -58,11 +68,6 @@ npm run tauri dev
 # 生产构建
 npm run tauri build
 ```
-
-## 文档
-
-- [Agent 集成设计](./docs/superpowers/specs/2026-05-08-cospace-agent-integration-design.md)
-- [实现计划](./docs/superpowers/plans/2026-05-08-cospace-agent-integration-plan.md)
 
 ## 许可证
 

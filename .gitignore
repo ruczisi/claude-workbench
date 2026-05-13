@@ -34,3 +34,12 @@ coverage/
 # Misc
 *.tgz
 *.zip
+
+# Screenshots & temp files
+screenshot*.png
+rustup-init.exe
+run.bat
+
+# AI assistant temp files
+.omc/
+.harness/

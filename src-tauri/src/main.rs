@@ -8,8 +8,27 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
+
+// Config module
+mod commands;
+use commands::config::{
+    resolve_path_command,
+    load_config_command,
+    save_config_command,
+    ensure_directory_command,
+    get_global_config,
+    save_global_config,
+    init_global_config,
+};
+use commands::workflow::{
+    parse_workflow_file,
+    parse_workflow_content,
+    validate_workflow_command,
+    render_template_command,
+    get_execution_order,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileEvent {
@@ -255,6 +274,24 @@ fn get_default_shell() -> String {
     {
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
     }
+}
+
+/// Get the resource path where bundled assets are stored
+#[tauri::command]
+fn get_resource_path(app: AppHandle) -> Result<String, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| e.to_string())?;
+    Ok(resource_dir.to_string_lossy().to_string())
+}
+
+/// Get the current working directory
+#[tauri::command]
+fn get_cwd() -> Result<String, String> {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
 }
 
 // ===== Multi-Session PTY Commands =====
@@ -638,12 +675,28 @@ fn main() {
             get_watched_path,
             update_team_tasks,
             find_agent_in_path,
+            get_resource_path,
+            get_cwd,
             create_session,
             destroy_session,
             write_to_session,
             resize_session,
             list_sessions,
             scan_conversations,
+            // Config commands
+            resolve_path_command,
+            load_config_command,
+            save_config_command,
+            ensure_directory_command,
+            get_global_config,
+            save_global_config,
+            init_global_config,
+            // Workflow commands
+            parse_workflow_file,
+            parse_workflow_content,
+            validate_workflow_command,
+            render_template_command,
+            get_execution_order,
         ])
         .setup(|_app| {
             log::info!("Cospace started");

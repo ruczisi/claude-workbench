@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1778209205991,
-  "projectRoot": "F:\\claude-workbench\\src-tauri",
+  "lastScanned": 1778571485765,
+  "projectRoot": "E:\\cospace\\src-tauri",
   "techStack": {
     "languages": [
       {
@@ -36,7 +36,10 @@
     "mainDirectories": [
       "src"
     ],
-    "gitBranches": null
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
   },
   "customNotes": [],
   "directoryMap": {
@@ -44,7 +47,7 @@
       "path": "capabilities",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1778209205972,
+      "lastAccessed": 1778571485735,
       "keyFiles": [
         "default.json"
       ]
@@ -53,14 +56,14 @@
       "path": "gen",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1778209205972,
+      "lastAccessed": 1778571485736,
       "keyFiles": []
     },
     "icons": {
       "path": "icons",
       "purpose": null,
       "fileCount": 16,
-      "lastAccessed": 1778209205973,
+      "lastAccessed": 1778571485738,
       "keyFiles": [
         "128x128.png",
         "128x128@2x.png",
@@ -73,7 +76,7 @@
       "path": "src",
       "purpose": "Source code",
       "fileCount": 1,
-      "lastAccessed": 1778209205973,
+      "lastAccessed": 1778571485739,
       "keyFiles": [
         "main.rs"
       ]
@@ -82,16 +85,25 @@
       "path": "target",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1778209205974,
+      "lastAccessed": 1778571485739,
       "keyFiles": [
         "CACHEDIR.TAG"
+      ]
+    },
+    "templates": {
+      "path": "templates",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1778571485740,
+      "keyFiles": [
+        "default-config.json"
       ]
     },
     "gen\\schemas": {
       "path": "gen\\schemas",
       "purpose": "Schema definitions",
       "fileCount": 4,
-      "lastAccessed": 1778209205974,
+      "lastAccessed": 1778571485741,
       "keyFiles": [
         "acl-manifests.json",
         "capabilities.json",
@@ -101,9 +113,27 @@
   },
   "hotPaths": [
     {
+      "path": "capabilities\\default.json",
+      "accessCount": 3,
+      "lastAccessed": 1778572909922,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 2,
+      "lastAccessed": 1778572871911,
+      "type": "directory"
+    },
+    {
       "path": "tauri.conf.json",
       "accessCount": 1,
-      "lastAccessed": 1778209259370,
+      "lastAccessed": 1778572101404,
+      "type": "file"
+    },
+    {
+      "path": "gen\\schemas\\desktop-schema.json",
+      "accessCount": 1,
+      "lastAccessed": 1778572885323,
       "type": "file"
     }
   ],
