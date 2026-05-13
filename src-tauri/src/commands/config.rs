@@ -17,6 +17,7 @@ pub struct GlobalConfig {
     pub workflows: Option<String>,
     pub default_workflow: Option<String>,
     pub agent: Option<AgentConfig>,
+    pub llm: Option<LlmConfig>,
     pub search: Option<SearchConfig>,
     pub ui: Option<UiConfig>,
 }
@@ -37,6 +38,15 @@ pub struct AgentConfig {
     pub r#type: String,
     pub auto_start: bool,
     pub custom_command: Option<String>,
+}
+
+/// LLM 配置（用于意图解析和提示词优化）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmConfig {
+    pub provider: String,
+    pub api_key: String,
+    pub base_url: Option<String>,
+    pub model: String,
 }
 
 /// 搜索配置
@@ -209,6 +219,7 @@ pub fn default_global_config() -> GlobalConfig {
             auto_start: true,
             custom_command: None,
         }),
+        llm: None,
         search: None,
         ui: Some(UiConfig {
             theme: Some("dark".to_string()),

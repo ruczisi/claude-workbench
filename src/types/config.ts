@@ -34,6 +34,18 @@ export interface GlobalConfig {
     customCommand?: string;
   };
 
+  /** LLM 配置（用于意图解析和提示词优化） */
+  llm?: {
+    /** LLM 提供商 */
+    provider: 'zhipu' | 'deepseek' | 'aliyun' | 'anthropic' | 'openai' | 'custom';
+    /** API Key */
+    apiKey: string;
+    /** 自定义 Base URL（可选） */
+    baseUrl?: string;
+    /** 模型名称 */
+    model: string;
+  };
+
   /** 搜索配置 */
   search?: {
     /** 搜索提供者 */
@@ -111,6 +123,12 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   agent: {
     type: 'claude',
     autoStart: true,
+  },
+  llm: {
+    provider: 'zhipu',
+    apiKey: '',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4/',
+    model: 'glm-4-flash',
   },
   ui: {
     theme: 'dark',

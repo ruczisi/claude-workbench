@@ -1,6 +1,15 @@
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../stores/appStore';
 import { taskManager } from '../services/taskManager';
 import type { Task } from '../services/taskManager';
+import {
+  LLM_PRESET_MODELS,
+  getDefaultBaseUrl,
+  getPresetModelById,
+  validateLlmConfig,
+  type LlmConfig,
+} from '../services/llmConfig';
 
 interface SidebarProps {
   onCreateTask?: () => void;
@@ -9,9 +18,111 @@ interface SidebarProps {
   onSelectTask?: (task: Task) => void;
 }
 
+interface GlobalConfig {
+  agent?: {
+    type: string;
+    autoStart: boolean;
+    customCommand?: string;
+  };
+  llm?: LlmConfig;
+}
+
 export default function Sidebar({ onCreateTask, watchedPath, currentTask, onSelectTask }: SidebarProps) {
   const { activeTab, setActiveTab } = useAppStore();
   const tasks = taskManager.getAllTasks();
+
+  // Settings state
+  const [config, setConfig] = useState<GlobalConfig | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [testResult, setTestResult] = useState('');
+
+  // Load config when settings tab is opened
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      loadConfig();
+    }
+  }, [activeTab]);
+
+  const loadConfig = async () => {
+    try {
+      const cfg = await invoke<GlobalConfig>('get_global_config');
+      // Ensure llm config exists with defaults
+      if (!cfg.llm) {
+        const defaultModel = LLM_PRESET_MODELS[0];
+        cfg.llm = {
+          provider: defaultModel.provider,
+          apiKey: '',
+          baseUrl: defaultModel.defaultBaseUrl,
+          model: defaultModel.id,
+        };
+      }
+      setConfig(cfg);
+    } catch (err) {
+      console.error('Failed to load config:', err);
+      // Use default config
+      const defaultModel = LLM_PRESET_MODELS[0];
+      setConfig({
+        llm: {
+          provider: defaultModel.provider,
+          apiKey: '',
+          baseUrl: defaultModel.defaultBaseUrl,
+          model: defaultModel.id,
+        },
+        agent: { type: 'claude', autoStart: true },
+      });
+    }
+  };
+
+  const saveConfig = async () => {
+    if (!config) return;
+    setLoading(true);
+    setSaveMessage('');
+    try {
+      await invoke('save_global_config', { config });
+      setSaveMessage('配置已保存');
+      setTimeout(() => setSaveMessage(''), 3000);
+    } catch (err) {
+      console.error('Failed to save config:', err);
+      setSaveMessage('保存失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateLlmConfig = (updates: Partial<LlmConfig>) => {
+    setConfig((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        llm: { ...prev.llm!, ...updates },
+      };
+    });
+  };
+
+  const handleProviderChange = (provider: LlmConfig['provider']) => {
+    const defaultUrl = getDefaultBaseUrl(provider);
+    const preset = LLM_PRESET_MODELS.find((m) => m.provider === provider);
+    updateLlmConfig({
+      provider,
+      baseUrl: defaultUrl,
+      model: preset?.id || '',
+    });
+  };
+
+  const handleTestConnection = async () => {
+    if (!config?.llm) return;
+    const validation = validateLlmConfig(config.llm);
+    if (!validation.valid) {
+      setTestResult(validation.errors.join('，'));
+      return;
+    }
+    setTestResult('测试中...');
+    // TODO: Implement actual API test in Phase 2
+    setTimeout(() => {
+      setTestResult('测试功能将在 Phase 2 实现');
+    }, 500);
+  };
 
   const getStatusColor = (status: Task['status']) => {
     switch (status) {
@@ -148,8 +259,166 @@ export default function Sidebar({ onCreateTask, watchedPath, currentTask, onSele
         )}
 
         {activeTab === 'settings' && (
-          <div className="text-sm text-gray-500 italic px-2 py-4 text-center">
-            设置功能开发中...
+          <div className="space-y-4">
+            {/* LLM Configuration */}
+            <div className="bg-gray-900 rounded p-3">
+              <h3 className="text-xs font-medium text-primary-400 mb-3">🤖 LLM 配置（意图解析）</h3>
+
+              {!config ? (
+                <div className="text-xs text-gray-500 text-center py-2">加载中...</div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Provider */}
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">提供商（国内优先）</label>
+                    <select
+                      value={config.llm?.provider || 'zhipu'}
+                      onChange={(e) => handleProviderChange(e.target.value as LlmConfig['provider'])}
+                      className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 focus:outline-none focus:border-primary-500"
+                    >
+                      {LLM_PRESET_MODELS.map((model) => (
+                        <option key={model.id} value={model.provider}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                    {config.llm && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        {getPresetModelById(config.llm.model)?.description}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Model */}
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">模型名称</label>
+                    <input
+                      type="text"
+                      value={config.llm?.model || ''}
+                      onChange={(e) => updateLlmConfig({ model: e.target.value })}
+                      className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 focus:outline-none focus:border-primary-500"
+                      placeholder="模型名称"
+                    />
+                  </div>
+
+                  {/* API Key */}
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">API Key</label>
+                    <input
+                      type="password"
+                      value={config.llm?.apiKey || ''}
+                      onChange={(e) => updateLlmConfig({ apiKey: e.target.value })}
+                      className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 focus:outline-none focus:border-primary-500"
+                      placeholder="输入 API Key"
+                    />
+                  </div>
+
+                  {/* Base URL */}
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Base URL（可选）</label>
+                    <input
+                      type="text"
+                      value={config.llm?.baseUrl || ''}
+                      onChange={(e) => updateLlmConfig({ baseUrl: e.target.value })}
+                      className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 focus:outline-none focus:border-primary-500"
+                      placeholder={getDefaultBaseUrl(config.llm?.provider || 'zhipu')}
+                    />
+                  </div>
+
+                  {/* Test Connection */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleTestConnection}
+                      className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+                    >
+                      测试连接
+                    </button>
+                    {testResult && (
+                      <span className="text-xs text-gray-400">{testResult}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Agent Tool Configuration */}
+            <div className="bg-gray-900 rounded p-3">
+              <h3 className="text-xs font-medium text-primary-400 mb-3">🛠️ Agent 工具配置</h3>
+
+              {!config ? (
+                <div className="text-xs text-gray-500 text-center py-2">加载中...</div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Agent Type */}
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">默认 Agent 工具</label>
+                    <select
+                      value={config.agent?.type || 'claude'}
+                      onChange={(e) =>
+                        setConfig((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                agent: {
+                                  ...prev.agent,
+                                  type: e.target.value,
+                                  autoStart: prev.agent?.autoStart ?? true,
+                                },
+                              }
+                            : prev
+                        )
+                      }
+                      className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 focus:outline-none focus:border-primary-500"
+                    >
+                      <option value="claude">Claude Code</option>
+                      <option value="codex">Codex</option>
+                      <option value="custom">自定义</option>
+                    </select>
+                  </div>
+
+                  {/* Custom Command */}
+                  {config.agent?.type === 'custom' && (
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">自定义命令</label>
+                      <input
+                        type="text"
+                        value={config.agent?.customCommand || ''}
+                        onChange={(e) =>
+                          setConfig((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  agent: {
+                                    ...prev.agent,
+                                    type: 'custom',
+                                    customCommand: e.target.value,
+                                    autoStart: prev.agent?.autoStart ?? true,
+                                  },
+                                }
+                              : prev
+                          )
+                        }
+                        className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-gray-200 focus:outline-none focus:border-primary-500"
+                        placeholder="自定义 Agent 启动命令"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Save Button */}
+            <button
+              onClick={saveConfig}
+              disabled={loading || !config}
+              className="w-full px-3 py-2 text-xs bg-primary-600 hover:bg-primary-700 disabled:bg-gray-700 rounded text-white"
+            >
+              {loading ? '保存中...' : '保存配置'}
+            </button>
+
+            {saveMessage && (
+              <div className="text-xs text-center text-green-400">{saveMessage}</div>
+            )}
           </div>
         )}
       </div>

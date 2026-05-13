@@ -25,9 +25,11 @@
 - [x] Preview 面板内容预览（文件列表 + Markdown 渲染）
 - [x] 任务历史列表（Sidebar 历史标签 + localStorage 持久化）
 - [x] Agent 上下文实际运行（生成结构化 Agent 指令文件 + 一键复制到剪贴板）
-- [ ] 设置面板功能实现
+- [x] 设置面板功能实现（LLM 配置 + Agent 工具配置）
 - [ ] 自定义 workflow 加载 / 编辑
-- [ ] 任务历史列表
+- [ ] 自然语言输入 + 意图解析（Phase 2）
+- [ ] 提示词优化 + Agent 桥接（Phase 3）
+- [ ] 任务自动推进（Phase 4）
 
 ## 关键信息
 
