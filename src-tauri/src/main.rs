@@ -24,6 +24,7 @@ use commands::config::{
     get_global_config,
     save_global_config,
     init_global_config,
+    detect_llm_config,
 };
 use commands::workflow::{
     parse_workflow_file,
@@ -697,6 +698,7 @@ fn main() {
             get_global_config,
             save_global_config,
             init_global_config,
+            detect_llm_config,
             // Workflow commands
             parse_workflow_file,
             parse_workflow_content,

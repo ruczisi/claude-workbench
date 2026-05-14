@@ -311,6 +311,135 @@ pub fn init_global_config() -> Result<GlobalConfig, String> {
     }
 }
 
+/// 检测结果结构
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetectedLlmConfig {
+    pub provider: String,
+    pub api_key: String,
+    pub base_url: String,
+    pub model: String,
+    pub source: String,
+}
+
+/// 从环境变量自动检测 LLM 配置
+#[tauri::command]
+pub fn detect_llm_config() -> Result<Option<DetectedLlmConfig>, String> {
+    // 检测优先级：智谱(免费) > DeepSeek > OpenAI > Anthropic > 阿里云
+
+    if let Ok(api_key) = std::env::var("ZHIPU_API_KEY") {
+        if !api_key.is_empty() {
+            return Ok(Some(DetectedLlmConfig {
+                provider: "zhipu".to_string(),
+                api_key,
+                base_url: "https://open.bigmodel.cn/api/paas/v4/".to_string(),
+                model: "glm-4-flash".to_string(),
+                source: "环境变量 ZHIPU_API_KEY".to_string(),
+            }));
+        }
+    }
+
+    if let Ok(api_key) = std::env::var("DEEPSEEK_API_KEY") {
+        if !api_key.is_empty() {
+            return Ok(Some(DetectedLlmConfig {
+                provider: "deepseek".to_string(),
+                api_key,
+                base_url: "https://api.deepseek.com/v1".to_string(),
+                model: "deepseek-v3".to_string(),
+                source: "环境变量 DEEPSEEK_API_KEY".to_string(),
+            }));
+        }
+    }
+
+    if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
+        if !api_key.is_empty() {
+            return Ok(Some(DetectedLlmConfig {
+                provider: "openai".to_string(),
+                api_key,
+                base_url: "https://api.openai.com/v1".to_string(),
+                model: "gpt-4o-mini".to_string(),
+                source: "环境变量 OPENAI_API_KEY".to_string(),
+            }));
+        }
+    }
+
+    if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
+        if !api_key.is_empty() {
+            return Ok(Some(DetectedLlmConfig {
+                provider: "anthropic".to_string(),
+                api_key,
+                base_url: "https://api.anthropic.com".to_string(),
+                model: "claude-3-haiku".to_string(),
+                source: "环境变量 ANTHROPIC_API_KEY".to_string(),
+            }));
+        }
+    }
+
+    if let Ok(api_key) = std::env::var("DASHSCOPE_API_KEY") {
+        if !api_key.is_empty() {
+            return Ok(Some(DetectedLlmConfig {
+                provider: "aliyun".to_string(),
+                api_key,
+                base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),
+                model: "qwen-turbo".to_string(),
+                source: "环境变量 DASHSCOPE_API_KEY".to_string(),
+            }));
+        }
+    }
+
+    // 尝试从 .env 文件读取
+    if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+        let env_paths = [
+            std::path::PathBuf::from(&home).join(".env"),
+            std::path::PathBuf::from(&home).join(".cospace").join(".env"),
+        ];
+        for env_path in &env_paths {
+            if let Ok(content) = std::fs::read_to_string(env_path) {
+                for line in content.lines() {
+                    if let Some((key, value)) = line.split_once('=') {
+                        let key = key.trim();
+                        let value = value.trim().trim_matches('"').trim_matches('\'');
+                        if value.is_empty() {
+                            continue;
+                        }
+                        match key {
+                            "ZHIPU_API_KEY" => {
+                                return Ok(Some(DetectedLlmConfig {
+                                    provider: "zhipu".to_string(),
+                                    api_key: value.to_string(),
+                                    base_url: "https://open.bigmodel.cn/api/paas/v4/".to_string(),
+                                    model: "glm-4-flash".to_string(),
+                                    source: format!(".env 文件: {}", env_path.display()),
+                                }));
+                            }
+                            "DEEPSEEK_API_KEY" => {
+                                return Ok(Some(DetectedLlmConfig {
+                                    provider: "deepseek".to_string(),
+                                    api_key: value.to_string(),
+                                    base_url: "https://api.deepseek.com/v1".to_string(),
+                                    model: "deepseek-v3".to_string(),
+                                    source: format!(".env 文件: {}", env_path.display()),
+                                }));
+                            }
+                            "OPENAI_API_KEY" => {
+                                return Ok(Some(DetectedLlmConfig {
+                                    provider: "openai".to_string(),
+                                    api_key: value.to_string(),
+                                    base_url: "https://api.openai.com/v1".to_string(),
+                                    model: "gpt-4o-mini".to_string(),
+                                    source: format!(".env 文件: {}", env_path.display()),
+                                }));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 /// 读取文本文件（绕过前端权限限制）
 pub fn read_text_file(path: &str) -> Result<String, String> {
     let resolved = resolve_path(path)?;

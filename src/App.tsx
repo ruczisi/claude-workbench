@@ -78,6 +78,37 @@ function App() {
         }>('get_global_config');
         if (cfg.llm?.apiKey) {
           setLlmConfig(resolveLlmConfig(cfg.llm));
+        } else {
+          // Auto-detect LLM config from environment / agent configs
+          try {
+            const detected = await invoke<{
+              provider: string;
+              api_key: string;
+              base_url: string;
+              model: string;
+              source: string;
+            } | null>('detect_llm_config');
+            if (detected) {
+              const autoConfig: LlmConfig = {
+                provider: detected.provider as LlmConfig['provider'],
+                apiKey: detected.api_key,
+                baseUrl: detected.base_url,
+                model: detected.model,
+              };
+              setLlmConfig(autoConfig);
+              // Save to global config for persistence
+              const fullCfg = await invoke<Record<string, unknown>>('get_global_config');
+              await invoke('save_global_config', {
+                config: {
+                  ...fullCfg,
+                  llm: autoConfig,
+                },
+              });
+              // Auto-detected config saved silently
+            }
+          } catch {
+            // Auto-detection failed, silently ignore
+          }
         }
         if (cfg.knowledge_base?.root_path) {
           knowledgeBase.setRootPath(cfg.knowledge_base.root_path);
