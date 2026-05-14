@@ -134,4 +134,73 @@ describe('TaskManager', () => {
       );
     });
   });
+
+  describe('deleteTask', () => {
+    it('should remove a task by id', async () => {
+      const task = await manager.createTaskFromWorkflow(
+        'ToDelete',
+        STANDARD_4STAGE_WORKFLOW,
+        '/test'
+      );
+
+      expect(manager.getTask(task.id)).toBeDefined();
+      const deleted = manager.deleteTask(task.id);
+      expect(deleted).toBe(true);
+      expect(manager.getTask(task.id)).toBeUndefined();
+    });
+
+    it('should return false for non-existent task', () => {
+      const deleted = manager.deleteTask('non-existent');
+      expect(deleted).toBe(false);
+    });
+  });
+
+  describe('writeTaskConfig', () => {
+    it('should write task config to disk', async () => {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const invokeMock = vi.mocked(invoke);
+
+      const task = await manager.createTaskFromWorkflow(
+        'PersistTest',
+        STANDARD_4STAGE_WORKFLOW,
+        '/test/persist'
+      );
+
+      // writeTaskConfig is called during createTaskFromWorkflow
+      expect(invokeMock).toHaveBeenCalledWith(
+        'write_text_file_command',
+        expect.objectContaining({
+          path: expect.stringContaining('.cospace/task.json'),
+          content: expect.stringContaining('PersistTest'),
+        })
+      );
+    });
+  });
+
+  describe('loadTasks skip existing', () => {
+    it('should not overwrite existing tasks when loading from localStorage', async () => {
+      const task = await manager.createTaskFromWorkflow(
+        'Original',
+        STANDARD_4STAGE_WORKFLOW,
+        '/test/original'
+      );
+
+      manager.startStage(task.id, 'demand');
+
+      // Simulate loading same task from localStorage with different state
+      manager.loadTasks([{
+        id: task.id,
+        name: 'Overwritten',
+        status: 'idle',
+        basePath: '/test/original',
+        createdAt: task.createdAt,
+        workflow: STANDARD_4STAGE_WORKFLOW,
+        stages: [{ id: 'demand', name: '需求确认', status: 'pending' }],
+      }]);
+
+      const loaded = manager.getTask(task.id);
+      expect(loaded!.name).toBe('Original'); // disk state preserved
+      expect(loaded!.stages[0].status).toBe('running');
+    });
+  });
 });

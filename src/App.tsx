@@ -74,14 +74,25 @@ function App() {
 
   // On mount: check for saved workspace and load task history
   useEffect(() => {
-    const savedPath = localStorage.getItem(STORAGE_KEY);
-    if (savedPath) {
-      setWatchedPath(savedPath);
-      setStartupPhase('ready');
-    } else {
-      setStartupPhase('select-workspace');
-    }
-    taskManager.loadFromStorage();
+    const init = async () => {
+      const savedPath = localStorage.getItem(STORAGE_KEY);
+      if (savedPath) {
+        setWatchedPath(savedPath);
+        setStartupPhase('ready');
+        // Load tasks from disk first (authoritative)
+        try {
+          const tasksDir = await join(savedPath, 'tasks');
+          await taskManager.loadTasksFromDisk(tasksDir);
+        } catch {
+          // tasks dir may not exist yet
+        }
+        // Fallback to localStorage for legacy tasks
+        taskManager.loadFromStorage();
+      } else {
+        setStartupPhase('select-workspace');
+      }
+    };
+    init();
   }, [setWatchedPath, setStartupPhase]);
 
   // Scan workflows directory when watchedPath changes
@@ -423,8 +434,22 @@ function App() {
     }
   };
 
+  // Delete a task
+  const handleDeleteTask = useCallback(
+    (taskId: string) => {
+      const isCurrent = currentTask?.id === taskId;
+      taskManager.deleteTask(taskId);
+      taskManager.saveToStorage();
+      if (isCurrent) {
+        setCurrentTask(null);
+        setShowWorkbench(false);
+      }
+    },
+    [currentTask]
+  );
+
   // Select a task from history
-  const handleSelectTask = (task: Task) => {
+  const handleSelectTask = useCallback((task: Task) => {
     setCurrentTask(task);
     setShowWorkbench(true);
     // Clear chat and agent state when switching tasks
@@ -435,7 +460,24 @@ function App() {
     setAgentSession(null);
     setPendingAdvanceSuggestion(false);
     addSystemMessage(`已切换到任务「${task.name}」`);
-  };
+  }, [addSystemMessage]);
+
+  // Keyboard shortcuts: Ctrl+1/2/3 to switch tasks
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.altKey || e.metaKey) return;
+      const idx = parseInt(e.key, 10);
+      if (isNaN(idx) || idx < 1 || idx > 3) return;
+      const tasks = taskManager.getAllTasks();
+      const task = tasks[idx - 1];
+      if (task) {
+        e.preventDefault();
+        handleSelectTask(task);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleSelectTask]);
 
   // Handle workspace selection
   const handleWorkspaceSelected = (path: string) => {
@@ -558,6 +600,7 @@ function App() {
             watchedPath={watchedPath}
             currentTask={currentTask}
             onSelectTask={handleSelectTask}
+            onDeleteTask={handleDeleteTask}
             workflows={workflows}
             onUseWorkflow={handleUseWorkflow}
             knowledgeBasePath={knowledgeBasePath}

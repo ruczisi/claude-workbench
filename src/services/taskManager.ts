@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
-import { readTextFile } from '@tauri-apps/plugin-fs';
+import { readDir, readTextFile, type DirEntry } from '@tauri-apps/plugin-fs';
 import { parseWorkflowContent, validateWorkflow, type WorkflowConfig } from './workflowParser';
 import { STANDARD_4STAGE_WORKFLOW } from './embeddedWorkflow';
 
@@ -70,6 +70,9 @@ export class TaskManager {
     // 4. Create base directory via Rust backend (bypasses FS permission restrictions)
     await invoke('ensure_directory_command', { path: basePath });
 
+    // 4.5 Persist task config to disk
+    await this.writeTaskConfig(task);
+
     // 5. Create stage directories
     for (let i = 0; i < stages.length; i++) {
       const stage = stages[i];
@@ -111,6 +114,60 @@ export class TaskManager {
     return this.getAllTasks().filter((t) => t.status === status);
   }
 
+  deleteTask(taskId: string): boolean {
+    return this.tasks.delete(taskId);
+  }
+
+  /** Write task config to .cospace/task.json */
+  async writeTaskConfig(task: Task): Promise<void> {
+    const configDir = await join(task.basePath, '.cospace');
+    await invoke('ensure_directory_command', { path: configDir });
+    const configPath = await join(configDir, 'task.json');
+    const data = {
+      id: task.id,
+      name: task.name,
+      description: task.description,
+      status: task.status,
+      basePath: task.basePath,
+      createdAt: task.createdAt,
+      currentStageId: task.currentStageId,
+      workflow: task.workflow,
+      stages: task.stages.map((s) => ({ id: s.id, name: s.name, status: s.status })),
+    };
+    await invoke('write_text_file_command', {
+      path: configPath,
+      content: JSON.stringify(data, null, 2),
+    });
+  }
+
+  /** Load a single task from .cospace/task.json */
+  async loadTaskConfig(basePath: string): Promise<Task | null> {
+    try {
+      const configPath = await join(basePath, '.cospace', 'task.json');
+      const content = await invoke<string>('read_text_file_command', { path: configPath });
+      const data = JSON.parse(content);
+      this.loadTasks([data]);
+      return this.getTask(data.id) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Scan tasks directory and load all task configs from disk */
+  async loadTasksFromDisk(tasksDir: string): Promise<void> {
+    try {
+      const entries: DirEntry[] = await readDir(tasksDir);
+      for (const entry of entries) {
+        if (entry.isDirectory) {
+          const taskPath = await join(tasksDir, entry.name);
+          await this.loadTaskConfig(taskPath);
+        }
+      }
+    } catch {
+      // tasks directory may not exist
+    }
+  }
+
   /** Serialize tasks to plain objects for storage */
   serializeTasks(): Array<{
     id: string;
@@ -147,6 +204,9 @@ export class TaskManager {
   /** Restore tasks from serialized data (minimal reconstruction) */
   loadTasks(data: Array<Record<string, unknown>>): void {
     for (const item of data) {
+      const id = String(item.id);
+      if (this.tasks.has(id)) continue; // disk takes precedence over localStorage
+
       // Restore workflow: prefer saved full workflow, fall back to standard
       let workflow: WorkflowConfig = STANDARD_4STAGE_WORKFLOW;
       if (item.workflow && typeof item.workflow === 'object') {
@@ -217,6 +277,8 @@ export class TaskManager {
     task.currentStageId = stageId;
     task.status = 'running';
 
+    this.writeTaskConfig(task).catch((err) => console.error('[Cospace] Failed to persist task:', err));
+
     return { ...task, stages: [...task.stages] };
   }
 
@@ -235,6 +297,9 @@ export class TaskManager {
 
     // Generate output documents for this stage
     await this.generateStageOutputs(task, stage);
+
+    // Persist updated task state
+    await this.writeTaskConfig(task);
 
     // Find next pending stage
     const nextStage = task.stages.slice(stageIndex + 1).find((s) => s.status === 'pending');

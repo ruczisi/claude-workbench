@@ -19,6 +19,7 @@ interface SidebarProps {
   watchedPath: string | null;
   currentTask: Task | null;
   onSelectTask?: (task: Task) => void;
+  onDeleteTask?: (taskId: string) => void;
   workflows?: SavedWorkflow[];
   onUseWorkflow?: (workflow: WorkflowConfig) => void;
   knowledgeBasePath?: string | null;
@@ -40,6 +41,7 @@ export default function Sidebar({
   watchedPath,
   currentTask,
   onSelectTask,
+  onDeleteTask,
   workflows,
   onUseWorkflow,
   knowledgeBasePath,
@@ -262,26 +264,49 @@ export default function Sidebar({
               </div>
             ) : (
               <div className="space-y-1">
-                {tasks.map((task) => (
-                  <button
+                {tasks.map((task, index) => (
+                  <div
                     key={task.id}
-                    onClick={() => onSelectTask?.(task)}
-                    className={`w-full text-left px-2 py-2 rounded text-xs transition-colors ${
+                    className={`group relative w-full text-left px-2 py-2 rounded text-xs transition-colors ${
                       currentTask?.id === task.id
                         ? 'bg-primary-700 text-white'
                         : 'text-gray-300 hover:bg-gray-700'
                     }`}
                   >
-                    <div className="font-medium truncate">{task.name}</div>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className={getStatusColor(task.status)}>
-                        {getStatusLabel(task.status)}
-                      </span>
-                      <span className="text-gray-500">
-                        {new Date(task.createdAt).toLocaleDateString('zh-CN')}
-                      </span>
-                    </div>
-                  </button>
+                    <button
+                      onClick={() => onSelectTask?.(task)}
+                      className="w-full text-left"
+                    >
+                      <div className="font-medium truncate">{task.name}</div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className={getStatusColor(task.status)}>
+                          {getStatusLabel(task.status)}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {index < 3 && (
+                            <span className="text-[10px] px-1 bg-gray-700 rounded text-gray-400">
+                              Ctrl+{index + 1}
+                            </span>
+                          )}
+                          <span className="text-gray-500">
+                            {new Date(task.createdAt).toLocaleDateString('zh-CN')}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                    {onDeleteTask && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteTask(task.id);
+                        }}
+                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 px-1 transition-opacity"
+                        title="删除任务"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}

@@ -33,6 +33,9 @@
 - [x] 自定义 workflow 加载（Sidebar 工作流标签 + `workflowManager`）
 - [x] 知识库集成（KB 路径配置 + 任务关联检索 + Agent 启动注入）
 - [x] App.tsx 完成 v0.3.0 全部集成点（10 处改动，TS / 单测 / 构建全绿）
+- [x] 任务删除（Sidebar 历史标签 + taskManager.deleteTask）
+- [x] 快捷键任务切换（Ctrl+1/2/3）
+- [x] 任务级配置持久化（`.cospace/task.json`，磁盘优先于 localStorage）
 
 ## 关键信息
 
