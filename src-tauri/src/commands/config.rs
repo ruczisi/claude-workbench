@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// 路径解析结果
@@ -81,24 +80,6 @@ pub struct UiConfig {
     pub theme: Option<String>,
     pub sidebar_width: Option<u32>,
     pub preview_width: Option<u32>,
-}
-
-/// 任务级配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskConfig {
-    #[serde(flatten)]
-    pub global_overrides: Option<GlobalConfig>,
-    pub workflow: Option<String>,
-    pub metadata: Option<TaskMetadata>,
-}
-
-/// 任务元数据
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskMetadata {
-    pub name: String,
-    pub r#type: String,
-    pub description: Option<String>,
-    pub created_at: Option<u64>,
 }
 
 /// 解析路径（处理 ~ 和环境变量）
@@ -205,13 +186,6 @@ pub fn write_text_file(path: &str, content: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 路径是否存在
-pub fn path_exists(path: &str) -> bool {
-    match resolve_path(path) {
-        Ok(resolved) => resolved.exists(),
-        Err(_) => false,
-    }
-}
 
 /// 默认全局配置
 pub fn default_global_config() -> GlobalConfig {

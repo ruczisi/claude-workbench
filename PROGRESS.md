@@ -1,7 +1,7 @@
 # Cospace v2.0 进度记录
 
 > 最后更新：2026-05-14  
-> 当前版本：v0.6.1-alpha（Sprint 5 Polish 完成）
+> 当前版本：v0.7.0-alpha（Sprint 6 功能增强 + Sprint 7 Release 准备完成）
 
 ---
 
