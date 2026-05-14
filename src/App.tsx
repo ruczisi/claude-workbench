@@ -15,7 +15,9 @@ import { fileWatcher } from './services/fileWatcher';
 import { workflowManager, type SavedWorkflow } from './services/workflowManager';
 import { knowledgeBase } from './services/knowledgeBase';
 import { contextHistory } from './services/contextHistory';
+import { exportTaskToMarkdown } from './services/taskExporter';
 import type { ChatMessageData } from './components/ChatMessage';
+import type { ContextEntry } from './services/contextHistory';
 import type { WorkflowConfig } from './services/workflowParser';
 
 const STORAGE_KEY = 'cospace-v2-workspace';
@@ -37,6 +39,7 @@ function App() {
   // Agent runner state
   const [agentSession, setAgentSession] = useState<AgentSession | null>(null);
   const [agentRunning, setAgentRunning] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<ContextEntry[]>([]);
   const [agentOutput, setAgentOutput] = useState<string[]>([]);
   const [agentKeyInfos, setAgentKeyInfos] = useState<AgentKeyInfo[]>([]);
   const [workflows, setWorkflows] = useState<SavedWorkflow[]>([]);
@@ -121,6 +124,10 @@ function App() {
       }
     };
     scan();
+    // Refresh when workflow editor saves
+    const handler = () => scan();
+    window.addEventListener('cospace:refresh-workflows', handler);
+    return () => window.removeEventListener('cospace:refresh-workflows', handler);
   }, [watchedPath]);
 
   const addMessage = useCallback((role: ChatMessageData['role'], content: string) => {
@@ -497,6 +504,17 @@ function App() {
     }
   };
 
+  const handleExportTask = async () => {
+    if (!currentTask) return;
+    try {
+      const result = await exportTaskToMarkdown(currentTask);
+      addMessage('system', `任务已导出: ${result.path} (${result.stageCount} 个阶段, ${result.fileCount} 个文件)`);
+    } catch (err) {
+      console.error('[Cospace] Failed to export task:', err);
+      addMessage('system', `导出失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   // Delete a task
   const handleDeleteTask = useCallback(
     (taskId: string) => {
@@ -525,6 +543,7 @@ function App() {
     // Load context history
     try {
       const history = await contextHistory.load(task.basePath);
+      setHistoryEntries(history);
       if (history.length > 0) {
         const msgs: ChatMessageData[] = history.map((entry) => ({
           id: generateId(),
@@ -535,7 +554,7 @@ function App() {
         setChatMessages(msgs);
       }
     } catch {
-      // No history or failed to load
+      setHistoryEntries([]);
     }
     addSystemMessage(`已切换到任务「${task.name}」`);
   }, [addSystemMessage]);
@@ -730,6 +749,8 @@ function App() {
                 onResumeAgent={handleResumeAgent}
                 canResumeAgent={agentRunner.canResume}
                 onSendAgentInput={handleSendAgentInput}
+                historyEntries={historyEntries}
+                onExportTask={handleExportTask}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center text-gray-500">

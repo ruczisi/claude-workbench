@@ -4,8 +4,9 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../stores/appStore';
 import { taskManager } from '../services/taskManager';
 import type { Task } from '../services/taskManager';
-import { type SavedWorkflow } from '../services/workflowManager';
+import { workflowManager, type SavedWorkflow } from '../services/workflowManager';
 import type { WorkflowConfig } from '../services/workflowParser';
+import WorkflowEditor from './WorkflowEditor';
 import {
   LLM_PRESET_MODELS,
   getDefaultBaseUrl,
@@ -57,6 +58,7 @@ export default function Sidebar({
   const [loading, setLoading] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [testResult, setTestResult] = useState('');
+  const [editingWorkflow, setEditingWorkflow] = useState<SavedWorkflow | null>(null);
 
   // Load config when settings tab is opened
   useEffect(() => {
@@ -348,12 +350,20 @@ export default function Sidebar({
                     <div className="text-xs text-gray-500 mt-1">
                       {workflow.config.stages.length} 个阶段
                     </div>
-                    <button
-                      onClick={() => onUseWorkflow?.(workflow.config)}
-                      className="mt-2 w-full px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 rounded text-white"
-                    >
-                      使用此工作流
-                    </button>
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => onUseWorkflow?.(workflow.config)}
+                        className="flex-1 px-2 py-1 text-xs bg-primary-600 hover:bg-primary-700 rounded text-white"
+                      >
+                        使用
+                      </button>
+                      <button
+                        onClick={() => setEditingWorkflow(workflow)}
+                        className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+                      >
+                        编辑
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -571,6 +581,20 @@ export default function Sidebar({
       <div className="p-2 border-t border-gray-700 text-xs text-gray-500">
         v2.0.0
       </div>
+
+      {/* Workflow Editor Modal */}
+      {editingWorkflow && (
+        <WorkflowEditor
+          workflow={editingWorkflow}
+          onSave={async (updated) => {
+            await workflowManager.saveWorkflow(updated);
+            setEditingWorkflow(null);
+            // Refresh workflow list via parent
+            window.dispatchEvent(new CustomEvent('cospace:refresh-workflows'));
+          }}
+          onClose={() => setEditingWorkflow(null)}
+        />
+      )}
     </div>
   );
 }

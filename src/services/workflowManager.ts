@@ -71,6 +71,53 @@ export class WorkflowManager {
   getWorkflow(id: string): SavedWorkflow | undefined {
     return this.workflows.get(id);
   }
+
+  async saveWorkflow(workflow: SavedWorkflow): Promise<void> {
+    const markdown = serializeWorkflowToMarkdown(workflow.config);
+    await invoke('write_text_file_command', { path: workflow.path, content: markdown });
+    this.workflows.set(workflow.id, workflow);
+  }
 }
 
 export const workflowManager = new WorkflowManager();
+
+/** 将 WorkflowConfig 序列化为 Markdown 格式 */
+function serializeWorkflowToMarkdown(config: WorkflowConfig): string {
+  const lines: string[] = [];
+  lines.push(`# ${config.name}`);
+  if (config.description) {
+    lines.push('');
+    lines.push(config.description);
+  }
+  lines.push('');
+  lines.push('## 阶段定义');
+  lines.push('');
+
+  for (let i = 0; i < config.stages.length; i++) {
+    const stage = config.stages[i];
+    lines.push(`### 阶段${i + 1}：${stage.name}`);
+    lines.push(`- id: ${stage.id}`);
+    lines.push(`- name: ${stage.name}`);
+    if (stage.description) {
+      lines.push(`- description: ${stage.description}`);
+    }
+    if (stage.depends) {
+      lines.push(`- depends: ${stage.depends}`);
+    }
+    if (stage.outputs.length > 0) {
+      lines.push('- outputs:');
+      for (const output of stage.outputs) {
+        lines.push(`    - name: ${output.name}`);
+        lines.push(`      path: ${output.path}`);
+      }
+    }
+    lines.push('- agent_context: |');
+    const contextLines = stage.agentContext.split('\n');
+    for (const line of contextLines) {
+      lines.push(`    ${line}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}

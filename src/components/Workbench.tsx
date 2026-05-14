@@ -2,9 +2,11 @@ import { useState } from 'react';
 import type { Task } from '../services/taskManager';
 import { formatAgentInstructions } from '../services/agentInstructionUtils';
 import type { AgentKeyInfo, AgentSession } from '../services/agentRunner';
+import type { ContextEntry } from '../services/contextHistory';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import AgentOutputPanel from './AgentOutputPanel';
+import SessionHistoryPanel from './SessionHistoryPanel';
 import type { ChatMessageData } from './ChatMessage';
 
 interface WorkbenchProps {
@@ -26,6 +28,10 @@ interface WorkbenchProps {
   onPauseAgent?: () => void;
   onResumeAgent?: () => void;
   onSendAgentInput?: (input: string) => void;
+  // Session history
+  historyEntries?: ContextEntry[];
+  // Export
+  onExportTask?: () => void;
 }
 
 export default function Workbench({
@@ -46,8 +52,10 @@ export default function Workbench({
   onPauseAgent,
   onResumeAgent,
   onSendAgentInput,
+  historyEntries = [],
+  onExportTask,
 }: WorkbenchProps) {
-  const [activePanel, setActivePanel] = useState<'chat' | 'agent-run' | 'agent-ctx'>('chat');
+  const [activePanel, setActivePanel] = useState<'chat' | 'agent-run' | 'agent-ctx' | 'history'>('chat');
 
   const currentStage = task.currentStageId
     ? task.stages.find((s) => s.id === task.currentStageId)
@@ -66,11 +74,22 @@ export default function Workbench({
               <p className="text-sm text-gray-400 mt-1">{task.description}</p>
             )}
           </div>
-          <div className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400">
-            {task.status === 'idle' && '待开始'}
-            {task.status === 'running' && '进行中'}
-            {task.status === 'completed' && '已完成'}
-            {task.status === 'error' && '出错'}
+          <div className="flex items-center gap-2">
+            <div className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400">
+              {task.status === 'idle' && '待开始'}
+              {task.status === 'running' && '进行中'}
+              {task.status === 'completed' && '已完成'}
+              {task.status === 'error' && '出错'}
+            </div>
+            {onExportTask && (
+              <button
+                onClick={onExportTask}
+                className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+                title="导出任务为 Markdown"
+              >
+                📤 导出
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -205,6 +224,16 @@ export default function Workbench({
         >
           🤖 Agent 指令
         </button>
+        <button
+          onClick={() => setActivePanel('history')}
+          className={`flex-1 py-2 text-xs font-medium ${
+            activePanel === 'history'
+              ? 'text-primary-400 border-b-2 border-primary-400'
+              : 'text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          📜 历史 ({historyEntries.length})
+        </button>
       </div>
 
       {/* Panel Content */}
@@ -282,6 +311,10 @@ export default function Workbench({
               </pre>
             </div>
           </div>
+        )}
+
+        {activePanel === 'history' && (
+          <SessionHistoryPanel entries={historyEntries} />
         )}
       </div>
 
