@@ -7,6 +7,7 @@ export type IntentType =
   | 'start_stage'
   | 'complete_stage'
   | 'advance_stage'
+  | 'jump_stage'
   | 'search_knowledge'
   | 'ask_question'
   | 'general_chat';
@@ -34,6 +35,7 @@ function buildSystemPrompt(context: ParseContext): string {
 - start_stage: 开始某个阶段（如"开始需求确认"）
 - complete_stage: 完成当前阶段（如"这一阶段完成了"）
 - advance_stage: 推进到下一阶段（如"下一阶段"、"继续"）
+- jump_stage: 跳转到指定阶段（如"跳到框架构思"、"阶段2"）
 - search_knowledge: 搜索知识库（如"搜索知识库中关于XX的内容"）
 - ask_question: 需要向用户澄清（当信息不足时）
 - general_chat: 一般对话（问候、闲聊等）
@@ -112,6 +114,7 @@ function validateIntentType(type: unknown): IntentType {
     'start_stage',
     'complete_stage',
     'advance_stage',
+    'jump_stage',
     'search_knowledge',
     'ask_question',
     'general_chat',
@@ -151,7 +154,8 @@ function postProcessIntent(
     !context.currentTask &&
     (intent.type === 'start_stage' ||
       intent.type === 'complete_stage' ||
-      intent.type === 'advance_stage')
+      intent.type === 'advance_stage' ||
+      intent.type === 'jump_stage')
   ) {
     return {
       type: 'ask_question',

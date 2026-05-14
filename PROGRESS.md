@@ -1,7 +1,7 @@
 # Cospace v2.0 进度记录
 
 > 最后更新：2026-05-14  
-> 当前版本：v0.3.0-alpha（Workflow + KB 集成完成）
+> 当前版本：v0.5.0-alpha（阶段跳转 + Agent 历史 + 模板展示完成）
 
 ---
 
@@ -26,8 +26,14 @@
 - [x] 任务历史列表（Sidebar 历史标签 + localStorage 持久化）
 - [x] Agent 上下文实际运行（生成结构化 Agent 指令文件 + 一键复制到剪贴板）
 - [x] 设置面板功能实现（LLM 配置 + Agent 工具配置）
-- [ ] 自定义 workflow 加载 / 编辑
+- [x] 自定义 workflow 加载 / 编辑
 - [x] 自然语言输入 + 意图解析（Phase 2）
+- [x] 任务删除（Sidebar 历史标签 + taskManager.deleteTask）
+- [x] 快捷键任务切换（Ctrl+1/2/3）
+- [x] 任务级配置持久化（`.cospace/task.json`，磁盘优先于 localStorage）
+- [x] 阶段快捷跳转（点击阶段导航 + `/stage` 指令 + `jumpToStage`）
+- [x] Agent 会话历史持久化（`.cospace/context.jsonl`）
+- [x] 知识库模板展示（Preview 面板模板列表）
 - [x] 提示词优化 + Agent 桥接（Phase 3）
 - [x] 任务自动推进（Phase 4）
 - [x] 自定义 workflow 加载（Sidebar 工作流标签 + `workflowManager`）

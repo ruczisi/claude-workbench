@@ -290,6 +290,15 @@ export class KnowledgeBase {
       byType,
     };
   }
+
+  /** Get all template-type documents from knowledge base */
+  async getTemplates(): Promise<KnowledgeResult[]> {
+    if (!this.rootPath) return [];
+    const items = await this.ensureCache();
+    return items
+      .filter((item) => item.type === 'template' || item.tags.includes('template'))
+      .slice(0, 20);
+  }
 }
 
 export const knowledgeBase = new KnowledgeBase();

@@ -282,6 +282,35 @@ export class TaskManager {
     return { ...task, stages: [...task.stages] };
   }
 
+  // Jump to a specific stage: mark all previous stages as completed, set target to running
+  jumpToStage(taskId: string, stageId: string): Task | undefined {
+    const task = this.tasks.get(taskId);
+    if (!task) return undefined;
+
+    const targetIndex = task.stages.findIndex((s) => s.id === stageId);
+    if (targetIndex === -1) return undefined;
+
+    // Mark all stages before target as completed
+    for (let i = 0; i < targetIndex; i++) {
+      if (task.stages[i].status === 'pending') {
+        task.stages[i].status = 'completed';
+      }
+    }
+
+    // Set target stage to running
+    const targetStage = task.stages[targetIndex];
+    if (targetStage.status !== 'completed') {
+      targetStage.status = 'running';
+    }
+
+    task.currentStageId = stageId;
+    task.status = targetStage.status === 'completed' ? 'idle' : 'running';
+
+    this.writeTaskConfig(task).catch((err) => console.error('[Cospace] Failed to persist task:', err));
+
+    return { ...task, stages: [...task.stages] };
+  }
+
   // Complete a stage: mark as completed, advance to next pending stage
   async completeStage(taskId: string, stageId: string): Promise<Task | undefined> {
     const task = this.tasks.get(taskId);

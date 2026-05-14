@@ -14,6 +14,7 @@ import { agentRunner, type AgentKeyInfo, type AgentSession } from './services/ag
 import { fileWatcher } from './services/fileWatcher';
 import { workflowManager, type SavedWorkflow } from './services/workflowManager';
 import { knowledgeBase } from './services/knowledgeBase';
+import { contextHistory } from './services/contextHistory';
 import type { ChatMessageData } from './components/ChatMessage';
 import type { WorkflowConfig } from './services/workflowParser';
 
@@ -330,6 +331,33 @@ function App() {
             break;
           }
 
+          case 'jump_stage': {
+            if (!currentTask) {
+              addMessage('assistant', '没有活跃的任务，请先创建任务。');
+              break;
+            }
+            const targetStageId = intent.params?.stageId;
+            if (!targetStageId) {
+              addMessage('assistant', '请指定要跳转到的阶段。');
+              break;
+            }
+            const targetStage = currentTask.stages.find((s) => s.id === targetStageId);
+            if (!targetStage) {
+              addMessage('assistant', '找不到指定阶段。');
+              break;
+            }
+            const updated = taskManager.jumpToStage(currentTask.id, targetStageId);
+            if (updated) {
+              setCurrentTask(updated);
+              taskManager.saveToStorage();
+              addMessage(
+                'assistant',
+                `⏭️ 已跳转到阶段「${targetStage.name}」。当前阶段：**${targetStage.name}**。`
+              );
+            }
+            break;
+          }
+
           case 'search_knowledge': {
             if (!currentTask) {
               addMessage('assistant', '没有活跃的任务，请先创建任务。');
@@ -449,7 +477,7 @@ function App() {
   );
 
   // Select a task from history
-  const handleSelectTask = useCallback((task: Task) => {
+  const handleSelectTask = useCallback(async (task: Task) => {
     setCurrentTask(task);
     setShowWorkbench(true);
     // Clear chat and agent state when switching tasks
@@ -459,6 +487,21 @@ function App() {
     setAgentRunning(false);
     setAgentSession(null);
     setPendingAdvanceSuggestion(false);
+    // Load context history
+    try {
+      const history = await contextHistory.load(task.basePath);
+      if (history.length > 0) {
+        const msgs: ChatMessageData[] = history.map((entry) => ({
+          id: generateId(),
+          role: entry.role === 'user' ? 'user' : entry.role === 'system' ? 'system' : 'assistant',
+          content: entry.content,
+          timestamp: new Date(entry.timestamp).getTime(),
+        }));
+        setChatMessages(msgs);
+      }
+    } catch {
+      // No history or failed to load
+    }
     addSystemMessage(`已切换到任务「${task.name}」`);
   }, [addSystemMessage]);
 
@@ -614,6 +657,15 @@ function App() {
                 task={currentTask}
                 onStartStage={handleStartStage}
                 onCompleteStage={handleCompleteStage}
+                onJumpStage={(stageId) => {
+                  if (!currentTask) return;
+                  const updated = taskManager.jumpToStage(currentTask.id, stageId);
+                  if (updated) {
+                    setCurrentTask(updated);
+                    taskManager.saveToStorage();
+                    addMessage('system', `已跳转到阶段「${updated.stages.find((s) => s.id === stageId)?.name}」`);
+                  }
+                }}
                 chatMessages={chatMessages}
                 onSendChat={handleSendChat}
                 chatLoading={chatLoading}

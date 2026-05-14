@@ -11,6 +11,7 @@ interface WorkbenchProps {
   task: Task;
   onStartStage?: (stageId: string) => void;
   onCompleteStage?: (stageId: string) => void;
+  onJumpStage?: (stageId: string) => void;
   chatMessages: ChatMessageData[];
   onSendChat?: (message: string) => void;
   chatLoading?: boolean;
@@ -28,6 +29,7 @@ export default function Workbench({
   task,
   onStartStage,
   onCompleteStage,
+  onJumpStage,
   chatMessages,
   onSendChat,
   chatLoading = false,
@@ -72,20 +74,33 @@ export default function Workbench({
         <div className="flex items-center gap-2">
           {task.stages.map((stage, index) => (
             <div key={stage.id} className="flex items-center">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+              <button
+                onClick={() => onJumpStage?.(stage.id)}
+                disabled={stage.status === 'running'}
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
                   stage.status === 'completed'
-                    ? 'bg-green-500 text-white'
+                    ? 'bg-green-500 text-white hover:bg-green-400'
                     : stage.status === 'running'
-                    ? 'bg-primary-500 text-white animate-pulse'
+                    ? 'bg-primary-500 text-white animate-pulse cursor-default'
                     : stage.status === 'error'
                     ? 'bg-red-500 text-white'
-                    : 'bg-gray-700 text-gray-400'
+                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-gray-200'
                 }`}
+                title={stage.status === 'running' ? '当前阶段' : `跳转到${stage.name}`}
               >
                 {stage.status === 'completed' ? '✓' : index + 1}
-              </div>
-              <span className="ml-2 text-sm text-gray-300">{stage.name}</span>
+              </button>
+              <button
+                onClick={() => onJumpStage?.(stage.id)}
+                disabled={stage.status === 'running'}
+                className={`ml-2 text-sm transition-colors ${
+                  stage.status === 'running'
+                    ? 'text-primary-300 cursor-default'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                {stage.name}
+              </button>
               {index < task.stages.length - 1 && (
                 <div className="w-8 h-0.5 bg-gray-700 mx-1" />
               )}

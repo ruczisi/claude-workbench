@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1778559814395,
-  "projectRoot": "E:\\cospace",
+  "lastScanned": 1778727029498,
+  "projectRoot": "F:\\claude-workbench",
   "techStack": {
     "languages": [
       {
@@ -33,9 +33,19 @@
         "category": "frontend"
       },
       {
+        "name": "@playwright/test",
+        "version": "1.60.0",
+        "category": "testing"
+      },
+      {
         "name": "vite",
         "version": "5.4.21",
         "category": "build"
+      },
+      {
+        "name": "vitest",
+        "version": "4.1.6",
+        "category": "testing"
       }
     ],
     "packageManager": "npm",
@@ -43,14 +53,18 @@
   },
   "build": {
     "buildCommand": "npm run build",
-    "testCommand": null,
+    "testCommand": "npm test",
     "lintCommand": null,
     "devCommand": "npm run dev",
     "scripts": {
       "dev": "vite",
       "build": "tsc && vite build",
       "preview": "vite preview",
-      "tauri": "tauri"
+      "tauri": "tauri",
+      "test": "vitest run",
+      "test:unit": "vitest run tests/unit",
+      "test:e2e": "playwright test tests/e2e",
+      "test:ui": "vitest --ui"
     }
   },
   "conventions": {
@@ -64,7 +78,8 @@
     "workspaces": [],
     "mainDirectories": [
       "docs",
-      "src"
+      "src",
+      "tests"
     ],
     "gitBranches": {
       "defaultBranch": "main",
@@ -73,11 +88,20 @@
   },
   "customNotes": [],
   "directoryMap": {
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 1,
+      "lastAccessed": 1778727029470,
+      "keyFiles": [
+        "index.html"
+      ]
+    },
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 1,
-      "lastAccessed": 1778559814323,
+      "lastAccessed": 1778727029470,
       "keyFiles": [
         "PRD-v2.0-workspace-redesign.md"
       ]
@@ -86,7 +110,7 @@
       "path": "src",
       "purpose": "Source code",
       "fileCount": 4,
-      "lastAccessed": 1778559814325,
+      "lastAccessed": 1778727029477,
       "keyFiles": [
         "App.tsx",
         "index.css",
@@ -98,7 +122,7 @@
       "path": "src-tauri",
       "purpose": null,
       "fileCount": 23,
-      "lastAccessed": 1778559814344,
+      "lastAccessed": 1778727029477,
       "keyFiles": [
         "build-cmd.bat",
         "build-d.bat",
@@ -111,282 +135,150 @@
       "path": "templates",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1778559814345,
+      "lastAccessed": 1778727029477,
       "keyFiles": [
         "default-config.json"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1778727029478,
+      "keyFiles": []
+    },
+    "dist\\assets": {
+      "path": "dist\\assets",
+      "purpose": "Static assets",
+      "fileCount": 2,
+      "lastAccessed": 1778727029478,
+      "keyFiles": [
+        "index-C39wBTOg.css",
+        "index-dAcyPXZr.js"
       ]
     },
     "src\\components": {
       "path": "src\\components",
       "purpose": "UI components",
-      "fileCount": 5,
-      "lastAccessed": 1778559814347,
+      "fileCount": 7,
+      "lastAccessed": 1778727029478,
       "keyFiles": [
-        "Preview.tsx",
-        "Sidebar.tsx",
-        "StartupOverlay.tsx"
+        "AgentOutputPanel.tsx",
+        "ChatInput.tsx",
+        "ChatMessage.tsx"
       ]
     },
     "src\\services": {
       "path": "src\\services",
       "purpose": "Business logic services",
-      "fileCount": 3,
-      "lastAccessed": 1778559814348,
+      "fileCount": 14,
+      "lastAccessed": 1778727029479,
       "keyFiles": [
-        "agentService.ts",
-        "configManager.ts",
-        "workflowParser.ts"
+        "agentInstructionUtils.ts",
+        "agentRunner.ts",
+        "embeddedWorkflow.ts"
       ]
     },
     "src\\types": {
       "path": "src\\types",
       "purpose": "Type definitions",
-      "fileCount": 1,
-      "lastAccessed": 1778559814349,
+      "fileCount": 2,
+      "lastAccessed": 1778727029479,
       "keyFiles": [
-        "config.ts"
+        "config.ts",
+        "index.ts"
       ]
     }
   },
   "hotPaths": [
     {
-      "path": "src\\components\\Workbench.tsx",
-      "accessCount": 21,
-      "lastAccessed": 1778562219029,
-      "type": "file"
-    },
-    {
       "path": "src\\App.tsx",
-      "accessCount": 15,
-      "lastAccessed": 1778573756931,
+      "accessCount": 27,
+      "lastAccessed": 1778727659390,
       "type": "file"
     },
     {
-      "path": "src\\services\\configManager.ts",
-      "accessCount": 14,
-      "lastAccessed": 1778561762103,
-      "type": "file"
-    },
-    {
-      "path": "src\\services\\taskManager.ts",
-      "accessCount": 11,
-      "lastAccessed": 1778562080903,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri\\src\\main.rs",
+      "path": "src\\services\\agentRunner.ts",
       "accessCount": 9,
-      "lastAccessed": 1778573633934,
+      "lastAccessed": 1778727411400,
       "type": "file"
     },
     {
-      "path": "src\\components\\Sidebar.tsx",
-      "accessCount": 8,
-      "lastAccessed": 1778566558195,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri\\src\\commands\\workflow.rs",
-      "accessCount": 7,
-      "lastAccessed": 1778565471224,
-      "type": "file"
-    },
-    {
-      "path": ".harness\\progress.md",
-      "accessCount": 4,
-      "lastAccessed": 1778560332777,
-      "type": "file"
-    },
-    {
-      "path": "src\\services\\agentSessionManager.ts",
-      "accessCount": 4,
-      "lastAccessed": 1778561634931,
-      "type": "file"
-    },
-    {
-      "path": ".harness\\task_list.json",
-      "accessCount": 2,
-      "lastAccessed": 1778560146893,
-      "type": "file"
-    },
-    {
-      "path": "src\\index.css",
-      "accessCount": 2,
-      "lastAccessed": 1778560252649,
-      "type": "file"
-    },
-    {
-      "path": "vite.config.ts",
-      "accessCount": 2,
-      "lastAccessed": 1778560499157,
-      "type": "file"
-    },
-    {
-      "path": "src\\types\\config.ts",
-      "accessCount": 2,
-      "lastAccessed": 1778561533401,
-      "type": "directory"
-    },
-    {
-      "path": "src\\services\\index.ts",
-      "accessCount": 2,
-      "lastAccessed": 1778561552526,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri\\tauri.conf.json",
-      "accessCount": 2,
-      "lastAccessed": 1778567272972,
-      "type": "file"
-    },
-    {
-      "path": "src",
-      "accessCount": 1,
-      "lastAccessed": 1778560202107,
-      "type": "directory"
-    },
-    {
-      "path": ".harness\\MVP_TESTING.md",
-      "accessCount": 1,
-      "lastAccessed": 1778560288028,
-      "type": "file"
-    },
-    {
-      "path": "package.json",
-      "accessCount": 1,
-      "lastAccessed": 1778560575677,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri\\src\\commands\\config.rs",
-      "accessCount": 1,
-      "lastAccessed": 1778560995526,
-      "type": "file"
-    },
-    {
-      "path": "src-tauri\\src\\commands\\mod.rs",
-      "accessCount": 1,
-      "lastAccessed": 1778561131828,
-      "type": "file"
-    },
-    {
-      "path": "screenshot.png",
-      "accessCount": 1,
-      "lastAccessed": 1778566163796,
-      "type": "file"
-    },
-    {
-      "path": "C:\\Users\\ruczisi\\AppData\\Local\\Temp\\claude\\E---------workbench\\e3ae4e4a-6ba5-4b2e-93a9-62dc8ed3e459\\tasks\\bosbvzbrv.output",
-      "accessCount": 1,
-      "lastAccessed": 1778566192796,
-      "type": "file"
-    },
-    {
-      "path": "screenshot2.png",
-      "accessCount": 1,
-      "lastAccessed": 1778566256484,
-      "type": "file"
-    },
-    {
-      "path": "screenshot3.png",
-      "accessCount": 1,
-      "lastAccessed": 1778566382123,
-      "type": "file"
-    },
-    {
-      "path": "src\\components\\Terminal.tsx",
-      "accessCount": 1,
-      "lastAccessed": 1778566411981,
+      "path": "src\\services\\intentEngine.ts",
+      "accessCount": 6,
+      "lastAccessed": 1778727161420,
       "type": "file"
     },
     {
       "path": "src\\components\\Preview.tsx",
-      "accessCount": 1,
-      "lastAccessed": 1778566443398,
+      "accessCount": 6,
+      "lastAccessed": 1778727617048,
       "type": "file"
     },
     {
-      "path": "screenshot_new.png",
-      "accessCount": 1,
-      "lastAccessed": 1778567151262,
+      "path": "src-tauri\\src\\main.rs",
+      "accessCount": 5,
+      "lastAccessed": 1778727359757,
       "type": "file"
     },
     {
-      "path": "screenshot_check.png",
-      "accessCount": 1,
-      "lastAccessed": 1778567204470,
+      "path": "src\\components\\Workbench.tsx",
+      "accessCount": 4,
+      "lastAccessed": 1778727224192,
       "type": "file"
     },
     {
-      "path": "screenshot_v2.png",
-      "accessCount": 1,
-      "lastAccessed": 1778567256335,
-      "type": "file"
-    },
-    {
-      "path": "screenshot_dev.png",
-      "accessCount": 1,
-      "lastAccessed": 1778567336961,
-      "type": "file"
-    },
-    {
-      "path": "C:\\Users\\ruczisi\\AppData\\Local\\Temp\\claude\\E---------workbench\\e3ae4e4a-6ba5-4b2e-93a9-62dc8ed3e459\\tasks\\bhouuc7n6.output",
-      "accessCount": 1,
-      "lastAccessed": 1778567357187,
-      "type": "file"
-    },
-    {
-      "path": "screenshot_dev2.png",
-      "accessCount": 1,
-      "lastAccessed": 1778567422189,
-      "type": "file"
-    },
-    {
-      "path": "C:\\Users\\ruczisi\\AppData\\Local\\Temp\\claude\\E---------workbench\\e3ae4e4a-6ba5-4b2e-93a9-62dc8ed3e459\\tasks\\btljl7yvi.output",
-      "accessCount": 1,
-      "lastAccessed": 1778567486556,
-      "type": "file"
-    },
-    {
-      "path": "C:\\Users\\ruczisi\\AppData\\Local\\Temp\\claude\\E---------workbench\\e3ae4e4a-6ba5-4b2e-93a9-62dc8ed3e459\\tasks\\b34ty65g3.output",
-      "accessCount": 1,
-      "lastAccessed": 1778567651625,
-      "type": "file"
-    },
-    {
-      "path": "screenshot_run.png",
-      "accessCount": 1,
-      "lastAccessed": 1778568168670,
-      "type": "file"
-    },
-    {
-      "path": "screenshot_workbench.png",
-      "accessCount": 1,
-      "lastAccessed": 1778568439189,
-      "type": "file"
-    },
-    {
-      "path": "C:\\Users\\ruczisi\\AppData\\Local\\Temp\\claude\\E---------workbench\\e3ae4e4a-6ba5-4b2e-93a9-62dc8ed3e459\\tasks\\bby1coopq.output",
-      "accessCount": 1,
-      "lastAccessed": 1778568532572,
-      "type": "file"
-    },
-    {
-      "path": "",
-      "accessCount": 1,
-      "lastAccessed": 1778573685979,
-      "type": "directory"
-    },
-    {
-      "path": "src-tauri\\capabilities\\default.json",
-      "accessCount": 1,
-      "lastAccessed": 1778573722190,
+      "path": "src-tauri\\src\\commands\\config.rs",
+      "accessCount": 3,
+      "lastAccessed": 1778727350591,
       "type": "file"
     },
     {
       "path": "PROGRESS.md",
+      "accessCount": 2,
+      "lastAccessed": 1778727056922,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 2,
+      "lastAccessed": 1778727057506,
+      "type": "directory"
+    },
+    {
+      "path": "src\\services\\taskManager.ts",
+      "accessCount": 2,
+      "lastAccessed": 1778727154951,
+      "type": "file"
+    },
+    {
+      "path": "src-tauri\\src",
+      "accessCount": 2,
+      "lastAccessed": 1778727282213,
+      "type": "directory"
+    },
+    {
+      "path": "src\\services\\knowledgeBase.ts",
+      "accessCount": 2,
+      "lastAccessed": 1778727567783,
+      "type": "file"
+    },
+    {
+      "path": "tests\\unit\\intentEngine.test.ts",
+      "accessCount": 2,
+      "lastAccessed": 1778727637159,
+      "type": "file"
+    },
+    {
+      "path": "docs\\PRD-v2.0-workspace-redesign.md",
       "accessCount": 1,
-      "lastAccessed": 1778631408098,
+      "lastAccessed": 1778727061873,
+      "type": "file"
+    },
+    {
+      "path": "src\\services\\contextHistory.ts",
+      "accessCount": 1,
+      "lastAccessed": 1778727269353,
       "type": "file"
     }
   ],

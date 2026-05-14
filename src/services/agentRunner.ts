@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { optimizeAgentPrompt, type OptimizedPrompt } from './promptOptimizer';
 import type { Task, TaskStage } from './taskManager';
 import type { KnowledgeResult } from './knowledgeBase';
+import { contextHistory } from './contextHistory';
 
 export interface AgentConfig {
   type: 'claude' | 'codex' | 'custom';
@@ -112,7 +113,10 @@ export class AgentRunner {
 
     this.outputBuffer = '';
 
-    // 4. 监听输出事件
+    // 4. Log session start
+    await contextHistory.logSystem(task.basePath, `Agent session started: ${agentConfig.type} for stage ${stage.name}`);
+
+    // 5. 监听输出事件
     this.unlistenOutput = await listen<SessionOutputEvent>('session-output', (event) => {
       if (event.payload.session_id === sessionId) {
         this.handleOutput(event.payload.data);
@@ -125,7 +129,7 @@ export class AgentRunner {
       }
     });
 
-    // 5. 启动 Agent 工具
+    // 6. 启动 Agent 工具
     const agentCommand = this.getAgentCommand(agentConfig);
 
     // 先启动 agent 工具
@@ -136,6 +140,9 @@ export class AgentRunner {
 
     // 注入提示词
     await this.injectPrompt(optimizedPrompt.text);
+
+    // 记录注入的提示词
+    await contextHistory.logAgentOutput(task.basePath, `[System Prompt]\n${optimizedPrompt.text}`);
   }
 
   /**
@@ -144,8 +151,10 @@ export class AgentRunner {
   async stopAgent(): Promise<void> {
     if (!this.currentSession) return;
 
-    const sessionId = this.currentSession.sessionId;
+    const { sessionId, task } = this.currentSession;
     this.currentSession.isRunning = false;
+
+    await contextHistory.logSystem(task.basePath, 'Agent session stopped');
 
     try {
       await invoke('destroy_session', { sessionId });
@@ -174,6 +183,7 @@ export class AgentRunner {
     if (!this.currentSession?.isRunning) {
       throw new Error('没有正在运行的 Agent 会话');
     }
+    await contextHistory.logUserInput(this.currentSession.task.basePath, input);
     await this.writeToSession(input + '\n');
   }
 
@@ -212,6 +222,11 @@ export class AgentRunner {
   private handleOutput(data: string): void {
     this.outputBuffer += data;
     this.onOutputCallback?.(data);
+
+    // 记录输出到历史
+    if (this.currentSession) {
+      contextHistory.logAgentOutput(this.currentSession.task.basePath, data).catch(() => {});
+    }
 
     // 提取关键信息
     const keyInfos = this.extractKeyInfo(data);

@@ -1,10 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Task } from '../services/taskManager';
 import { getCompletedStageFiles, groupFilesByStage } from '../services/previewUtils';
+import { knowledgeBase, type KnowledgeResult } from '../services/knowledgeBase';
 
 interface PreviewProps {
   task: Task | null;
@@ -15,6 +16,12 @@ export default function Preview({ task }: PreviewProps) {
   const [selectedFileName, setSelectedFileName] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<KnowledgeResult[]>([]);
+
+  // Load templates from knowledge base
+  useEffect(() => {
+    knowledgeBase.getTemplates().then(setTemplates).catch(() => setTemplates([]));
+  }, [task?.id]);
 
   const handleFileClick = useCallback(
     async (outputPath: string, outputName: string) => {
@@ -61,6 +68,35 @@ export default function Preview({ task }: PreviewProps) {
       {/* Header */}
       <div className="p-4 border-b border-gray-700">
         <h2 className="text-sm font-medium text-gray-300">预览</h2>
+      </div>
+
+      {/* Templates */}
+      <div className="p-4 border-b border-gray-700 max-h-40 overflow-y-auto">
+        <h3 className="text-xs font-medium text-gray-400 mb-2">📚 知识库模板</h3>
+        {templates.length === 0 ? (
+          <p className="text-xs text-gray-500">暂无模板</p>
+        ) : (
+          <div className="space-y-1">
+            {templates.map((tmpl, i) => (
+              <button
+                key={i}
+                onClick={async () => {
+                  try {
+                    const content = await knowledgeBase.readDocument(tmpl.path);
+                    setSelectedContent(content);
+                    setSelectedFileName(tmpl.title);
+                  } catch {
+                    setError('读取模板失败');
+                  }
+                }}
+                className="w-full text-left px-2 py-1 text-xs rounded text-gray-300 hover:bg-gray-700 transition-colors truncate"
+                title={tmpl.description}
+              >
+                {tmpl.title}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* File List */}

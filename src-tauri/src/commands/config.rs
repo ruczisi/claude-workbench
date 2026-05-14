@@ -345,10 +345,37 @@ pub fn read_text_file(path: &str) -> Result<String, String> {
         .map_err(|e| format!("Failed to read file: {}", e))
 }
 
+/// 追加文本到文件（绕过前端权限限制）
+pub fn append_text_file(path: &str, content: &str) -> Result<(), String> {
+    let resolved = resolve_path(path)?;
+
+    if let Some(parent) = resolved.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&resolved)
+        .map_err(|e| format!("Failed to open file: {}", e))?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| format!("Failed to append to file: {}", e))?;
+    Ok(())
+}
+
 /// 写入文本文件（绕过前端权限限制）
 #[tauri::command]
 pub fn write_text_file_command(path: String, content: String) -> Result<(), String> {
     write_text_file(&path, &content)?;
+    Ok(())
+}
+
+/// 追加文本到文件（绕过前端权限限制）
+#[tauri::command]
+pub fn append_text_file_command(path: String, content: String) -> Result<(), String> {
+    append_text_file(&path, &content)?;
     Ok(())
 }
 
