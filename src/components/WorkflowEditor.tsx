@@ -3,31 +3,62 @@ import type { SavedWorkflow } from '../services/workflowManager';
 import type { WorkflowStage } from '../services/workflowParser';
 
 interface WorkflowEditorProps {
-  workflow: SavedWorkflow;
+  workflow?: SavedWorkflow;
+  isNew?: boolean;
   onSave: (workflow: SavedWorkflow) => void;
   onClose: () => void;
+  basePath?: string;
 }
 
-export default function WorkflowEditor({ workflow, onSave, onClose }: WorkflowEditorProps) {
-  const [name, setName] = useState(workflow.config.name);
-  const [description, setDescription] = useState(workflow.config.description || '');
+const DEFAULT_NEW_WORKFLOW: SavedWorkflow = {
+  id: '',
+  name: '新工作流',
+  description: '',
+  path: '',
+  config: {
+    name: '新工作流',
+    description: '',
+    stages: [
+      {
+        id: 'stage1',
+        name: '阶段1',
+        description: '',
+        outputs: [{ name: '输出文档', path: '01-输出/output.md' }],
+        agentContext: '请在此描述本阶段需要 Agent 完成的工作...',
+      },
+    ],
+  },
+};
+
+export default function WorkflowEditor({ workflow, isNew, onSave, onClose, basePath }: WorkflowEditorProps) {
+  const wf = workflow || DEFAULT_NEW_WORKFLOW;
+  const [name, setName] = useState(wf.config.name);
+  const [description, setDescription] = useState(wf.config.description || '');
   const [stages, setStages] = useState<WorkflowStage[]>(
-    workflow.config.stages.map((s) => ({ ...s, outputs: s.outputs.map((o) => ({ ...o })) }))
+    wf.config.stages.map((s) => ({ ...s, outputs: s.outputs.map((o) => ({ ...o })) }))
   );
   const [expandedStage, setExpandedStage] = useState<number | null>(0);
 
   const handleSave = () => {
-    const updated: SavedWorkflow = {
-      ...workflow,
-      name,
-      description,
-      config: {
-        ...workflow.config,
+    let updated: SavedWorkflow;
+    if (isNew) {
+      const id = `workflow-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const slug = name.trim().replace(/\s+/g, '_').replace(/[^\w一-龥]/g, '') || 'workflow';
+      updated = {
+        id,
         name,
         description,
-        stages,
-      },
-    };
+        path: `${basePath || '.'}/workflows/${slug}.md`,
+        config: { name, description, stages },
+      };
+    } else {
+      updated = {
+        ...wf,
+        name,
+        description,
+        config: { ...wf.config, name, description, stages },
+      };
+    }
     onSave(updated);
   };
 
@@ -42,7 +73,7 @@ export default function WorkflowEditor({ workflow, onSave, onClose }: WorkflowEd
       <div className="bg-gray-900 rounded-lg border border-gray-700 w-full max-w-2xl max-h-[90vh] flex flex-col mx-4">
         {/* Header */}
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-200">编辑工作流</h2>
+          <h2 className="text-sm font-semibold text-gray-200">{isNew ? '新建工作流' : '编辑工作流'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-lg">×</button>
         </div>
 

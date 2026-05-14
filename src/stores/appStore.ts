@@ -3,7 +3,7 @@ import type { Task, TaskStage } from '../services/taskManager';
 
 export type AgentType = 'claude' | 'codex' | 'custom';
 export type SidebarTab = 'workspace' | 'history' | 'workflows' | 'settings';
-export type StartupPhase = 'loading' | 'select-workspace' | 'ready';
+export type StartupPhase = 'loading' | 'select-workspace' | 'select-agent' | 'ready';
 
 interface AppState {
   // Startup phase

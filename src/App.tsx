@@ -5,10 +5,12 @@ import { invoke } from '@tauri-apps/api/core';
 import Sidebar from './components/Sidebar';
 import Workbench from './components/Workbench';
 import Preview from './components/Preview';
+import StartupOverlay from './components/StartupOverlay';
+import TaskCreateModal from './components/TaskCreateModal';
 import { useAppStore } from './stores/appStore';
 import { taskManager, type Task } from './services/taskManager';
 import { STANDARD_4STAGE_WORKFLOW } from './services/embeddedWorkflow';
-import { parseUserIntent } from './services/intentEngine';
+import { parseUserIntent, isLlmConfigValid } from './services/intentEngine';
 import { createDefaultLlmConfig, resolveLlmConfig, type LlmConfig } from './services/llmConfig';
 import { agentRunner, type AgentKeyInfo, type AgentSession } from './services/agentRunner';
 import { fileWatcher } from './services/fileWatcher';
@@ -30,6 +32,7 @@ function App() {
   const [theme] = useState<'dark' | 'light'>('dark');
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [showWorkbench, setShowWorkbench] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessageData[]>([]);
@@ -94,7 +97,17 @@ function App() {
       const savedPath = localStorage.getItem(STORAGE_KEY);
       if (savedPath) {
         setWatchedPath(savedPath);
-        setStartupPhase('ready');
+        // Check if agent config exists
+        try {
+          const cfg = await invoke<{ agent?: { type?: string } }>('get_global_config');
+          if (cfg.agent?.type) {
+            setStartupPhase('ready');
+          } else {
+            setStartupPhase('select-agent');
+          }
+        } catch {
+          setStartupPhase('select-agent');
+        }
         // Load tasks from disk first (authoritative)
         try {
           const tasksDir = await join(savedPath, 'tasks');
@@ -220,6 +233,14 @@ function App() {
   const handleSendChat = useCallback(
     async (message: string) => {
       addMessage('user', message);
+
+      // Pre-check LLM config
+      const configCheck = isLlmConfigValid(llmConfig);
+      if (!configCheck.valid) {
+        addMessage('assistant', configCheck.message || '请先配置 LLM（侧边栏 → 设置）');
+        return;
+      }
+
       setChatLoading(true);
 
       try {
@@ -444,11 +465,17 @@ function App() {
 
     // Get agent config from settings
     try {
-      const cfg = await invoke<{ agent?: { type: string; customCommand?: string } }>('get_global_config');
+      const cfg = await invoke<{ agent?: { type: string; customCommand?: string }; llm?: LlmConfig }>('get_global_config');
       const agentConfig = {
-        type: (cfg.agent?.type || 'claude') as 'claude' | 'codex' | 'custom',
+        type: (cfg.agent?.type || 'claude') as 'builtin' | 'claude' | 'codex' | 'custom',
         customCommand: cfg.agent?.customCommand,
+        llmConfig: cfg.llm && cfg.llm.apiKey ? cfg.llm : undefined,
       };
+
+      if (agentConfig.type === 'builtin' && !agentConfig.llmConfig?.apiKey) {
+        addMessage('assistant', '请先配置 LLM（侧边栏 → 设置），才能使用内置 Agent 模式。');
+        return;
+      }
 
       setAgentOutput([]);
       setAgentKeyInfos([]);
@@ -580,7 +607,28 @@ function App() {
   const handleWorkspaceSelected = (path: string) => {
     localStorage.setItem(STORAGE_KEY, path);
     setWatchedPath(path);
-    setStartupPhase('ready');
+    setStartupPhase('select-agent');
+  };
+
+  // Handle agent selection
+  const handleAgentSelected = async (agentType: string) => {
+    try {
+      const cfg = await invoke<Record<string, unknown>>('get_global_config');
+      await invoke('save_global_config', {
+        config: {
+          ...cfg,
+          agent: {
+            type: agentType,
+            autoStart: true,
+          },
+        },
+      });
+      setStartupPhase('ready');
+    } catch (err) {
+      console.error('[Cospace] Failed to save agent config:', err);
+      // Still proceed even if save fails
+      setStartupPhase('ready');
+    }
   };
 
   // Select workspace folder
@@ -599,27 +647,37 @@ function App() {
     }
   };
 
-  // Create demo task
-  const handleCreateDemoTask = async () => {
+  // Open task creation modal
+  const handleCreateNewTask = () => {
     if (!watchedPath) {
       alert('请先选择工作区');
       return;
     }
+    setShowTaskModal(true);
+  };
+
+  // Create task from modal
+  const handleCreateTaskFromModal = async (
+    name: string,
+    description: string,
+    workflow: WorkflowConfig
+  ) => {
     try {
-      const taskBasePath = await join(watchedPath, 'tasks', 'demo-task');
+      const taskBasePath = await join(watchedPath!, 'tasks', `task-${Date.now()}`);
       const task = await taskManager.createTaskFromWorkflow(
-        '贵港供销社方案',
-        STANDARD_4STAGE_WORKFLOW,
+        name,
+        workflow,
         taskBasePath,
-        '贵港供销社南北大通道合作方案'
+        description
       );
       setCurrentTask(task);
       setShowWorkbench(true);
       setChatMessages([]);
-      addSystemMessage('已创建任务「贵港供销社方案」');
+      addSystemMessage(`已创建任务「${name}」`);
       taskManager.saveToStorage();
+      setShowTaskModal(false);
     } catch (err) {
-      console.error('[Cospace] Failed to create demo task:', err);
+      console.error('[Cospace] Failed to create task:', err);
       alert(`创建任务失败: ${err}`);
     }
   };
@@ -674,19 +732,18 @@ function App() {
   return (
     <div className={`${theme} h-full flex flex-col bg-gray-900 text-gray-100`}>
       {/* Startup overlay */}
-      {startupPhase === 'select-workspace' && (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-primary-400 mb-4">Cospace v2.0</h1>
-            <p className="text-gray-400 mb-6">Agent 驱动的工作台</p>
-            <button
-              onClick={handleSelectWorkspace}
-              className="px-4 py-2 bg-primary-600 hover:bg-primary-700 rounded text-white"
-            >
-              选择工作区
-            </button>
-          </div>
-        </div>
+      {(startupPhase === 'select-workspace' || startupPhase === 'select-agent') && (
+        <StartupOverlay
+          phase={startupPhase === 'select-workspace' ? 'workspace' : 'agent'}
+          workspacePath={watchedPath}
+          onWorkspaceSelected={handleWorkspaceSelected}
+          onAgentSelected={handleAgentSelected}
+          onBack={
+            startupPhase === 'select-agent'
+              ? () => setStartupPhase('select-workspace')
+              : undefined
+          }
+        />
       )}
 
       {/* Main app content */}
@@ -707,7 +764,7 @@ function App() {
           {(!isMobile || sidebarOpen) && (
             <div className={`${isMobile ? 'absolute z-40 h-full' : ''} flex-shrink-0`}>
               <Sidebar
-                onCreateTask={handleCreateDemoTask}
+                onCreateTask={handleCreateNewTask}
                 watchedPath={watchedPath}
                 currentTask={currentTask}
                 onSelectTask={handleSelectTask}
@@ -755,7 +812,7 @@ function App() {
             ) : (
               <div className="flex-1 flex items-center justify-center text-gray-500">
                 <div className="text-center">
-                  <p className="mb-4">点击侧边栏"+ 创建示例任务"开始</p>
+                  <p className="mb-4">点击侧边栏"+ 新建任务"开始</p>
                   {!watchedPath && (
                     <button
                       onClick={handleSelectWorkspace}
@@ -772,6 +829,13 @@ function App() {
           {showPreview && <Preview task={currentTask} />}
         </div>
       )}
+      <TaskCreateModal
+        isOpen={showTaskModal}
+        onClose={() => setShowTaskModal(false)}
+        onCreate={handleCreateTaskFromModal}
+        workflows={workflows}
+        defaultWorkflow={STANDARD_4STAGE_WORKFLOW}
+      />
     </div>
   );
 }

@@ -58,6 +58,19 @@ function buildSystemPrompt(context: ParseContext): string {
   return prompt;
 }
 
+export function isLlmConfigValid(config: LlmConfig): { valid: boolean; message?: string } {
+  if (!config.apiKey || config.apiKey.trim() === '') {
+    return { valid: false, message: '请先配置 LLM（侧边栏 → 设置）' };
+  }
+  if (!config.model || config.model.trim() === '') {
+    return { valid: false, message: 'LLM 模型名称未配置' };
+  }
+  if (!config.baseUrl || config.baseUrl.trim() === '') {
+    return { valid: false, message: 'LLM Base URL 未配置' };
+  }
+  return { valid: true };
+}
+
 /**
  * 解析用户输入为结构化意图
  */
@@ -66,6 +79,16 @@ export async function parseUserIntent(
   context: ParseContext,
   config: LlmConfig
 ): Promise<UserIntent> {
+  // Pre-check LLM config
+  const configCheck = isLlmConfigValid(config);
+  if (!configCheck.valid) {
+    return {
+      type: 'general_chat',
+      confidence: 0,
+      response: configCheck.message,
+    };
+  }
+
   try {
     const result = await callLlm(config, {
       messages: [
@@ -78,11 +101,26 @@ export async function parseUserIntent(
 
     const parsed = parseLlmResponse(result.content);
     return postProcessIntent(parsed, context);
-  } catch {
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+      return {
+        type: 'general_chat',
+        confidence: 0,
+        response: 'LLM API 认证失败，请检查 API Key 是否正确配置（侧边栏 → 设置）。',
+      };
+    }
+    if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+      return {
+        type: 'general_chat',
+        confidence: 0,
+        response: 'LLM API 请求过于频繁，请稍后再试。',
+      };
+    }
     return {
       type: 'general_chat',
       confidence: 0,
-      response: '抱歉，解析请求时出了点问题，请再试一次。',
+      response: `抱歉，解析请求时出了点问题：${errorMessage}`,
     };
   }
 }

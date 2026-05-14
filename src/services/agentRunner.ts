@@ -4,10 +4,13 @@ import { optimizeAgentPrompt, type OptimizedPrompt } from './promptOptimizer';
 import type { Task, TaskStage } from './taskManager';
 import type { KnowledgeResult } from './knowledgeBase';
 import { contextHistory } from './contextHistory';
+import { callLlm, type LlmMessage } from './llmService';
+import type { LlmConfig } from './llmConfig';
 
 export interface AgentConfig {
-  type: 'claude' | 'codex' | 'custom';
+  type: 'builtin' | 'claude' | 'codex' | 'custom';
   customCommand?: string;
+  llmConfig?: LlmConfig;
 }
 
 export interface AgentKeyInfo {
@@ -22,6 +25,7 @@ export interface AgentSession {
   stage: TaskStage;
   optimizedPrompt: OptimizedPrompt;
   isRunning: boolean;
+  llmConfig?: LlmConfig;
 }
 
 interface SessionOutputEvent {
@@ -32,6 +36,109 @@ interface SessionOutputEvent {
 interface SessionExitEvent {
   session_id: string;
   code: number;
+}
+
+/**
+ * 内置 Agent 运行器 — 直接调用 LLM API
+ */
+class BuiltinAgentRunner {
+  private abortController: AbortController | null = null;
+  private messageHistory: LlmMessage[] = [];
+
+  async start(
+    prompt: string,
+    llmConfig: LlmConfig,
+    onChunk: (chunk: string) => void,
+    onComplete: () => void,
+    onError: (err: Error) => void
+  ): Promise<void> {
+    this.abortController = new AbortController();
+    this.messageHistory = [
+      {
+        role: 'system' as const,
+        content:
+          'You are an AI agent helping with task execution. Work step by step and report progress.',
+      },
+      { role: 'user' as const, content: prompt },
+    ];
+
+    try {
+      const response = await callLlm(llmConfig, {
+        messages: this.messageHistory,
+        temperature: 0.3,
+        maxTokens: 4000,
+      });
+
+      const content = response.content;
+      this.messageHistory.push({ role: 'assistant' as const, content });
+
+      // Simulate chunking for UI consistency with PTY mode
+      const chunks = this.simulateChunking(content);
+      for (const chunk of chunks) {
+        if (this.abortController.signal.aborted) break;
+        onChunk(chunk);
+        await this.delay(50);
+      }
+
+      onComplete();
+    } catch (err) {
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  async sendFollowUp(
+    input: string,
+    llmConfig: LlmConfig,
+    onChunk: (chunk: string) => void,
+    onComplete: () => void,
+    onError: (err: Error) => void
+  ): Promise<void> {
+    this.messageHistory.push({ role: 'user' as const, content: input });
+
+    try {
+      const response = await callLlm(llmConfig, {
+        messages: this.messageHistory,
+        temperature: 0.3,
+        maxTokens: 4000,
+      });
+
+      const content = response.content;
+      this.messageHistory.push({ role: 'assistant', content });
+
+      const chunks = this.simulateChunking(content);
+      for (const chunk of chunks) {
+        if (this.abortController?.signal.aborted) break;
+        onChunk(chunk);
+        await this.delay(50);
+      }
+
+      onComplete();
+    } catch (err) {
+      onError(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  stop(): void {
+    this.abortController?.abort();
+  }
+
+  private simulateChunking(text: string): string[] {
+    const chunks: string[] = [];
+    const lines = text.split('\n');
+    for (const line of lines) {
+      if (line.length > 100) {
+        const sentences = line.match(/[^.!?。！？]+[.!?。！？]+/g) || [line];
+        chunks.push(...sentences);
+      } else {
+        chunks.push(line + '\n');
+      }
+    }
+    return chunks.length > 0 ? chunks : [text];
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
 }
 
 /**
@@ -48,6 +155,7 @@ export class AgentRunner {
   private outputBuffer: string = '';
   private unlistenOutput: UnlistenFn | null = null;
   private unlistenExit: UnlistenFn | null = null;
+  private builtinRunner: BuiltinAgentRunner | null = null;
 
   private onOutputCallback: ((data: string) => void) | null = null;
   private onKeyInfoCallback: ((info: AgentKeyInfo) => void) | null = null;
@@ -102,6 +210,17 @@ export class AgentRunner {
     // 1. 生成优化提示词（注入知识库上下文）
     const optimizedPrompt = optimizeAgentPrompt({ task, stage, knowledgeResults });
 
+    // Save snapshot for pause/resume
+    this.pausedSnapshot = { task, stage, agentConfig, knowledgeResults };
+
+    this.outputBuffer = '';
+
+    if (agentConfig.type === 'builtin') {
+      await this.startBuiltinAgent(task, stage, optimizedPrompt, agentConfig.llmConfig);
+      return;
+    }
+
+    // PTY mode
     // 2. 创建会话 ID
     const sessionId = `agent-${task.id}-${stage.id}-${Date.now()}`;
 
@@ -118,11 +237,6 @@ export class AgentRunner {
       optimizedPrompt,
       isRunning: true,
     };
-
-    // Save snapshot for pause/resume
-    this.pausedSnapshot = { task, stage, agentConfig, knowledgeResults };
-
-    this.outputBuffer = '';
 
     // 4. Log session start
     await contextHistory.logSystem(task.basePath, `Agent session started: ${agentConfig.type} for stage ${stage.name}`);
@@ -156,6 +270,46 @@ export class AgentRunner {
     await contextHistory.logAgentOutput(task.basePath, `[System Prompt]\n${optimizedPrompt.text}`);
   }
 
+  private async startBuiltinAgent(
+    task: Task,
+    stage: TaskStage,
+    optimizedPrompt: OptimizedPrompt,
+    llmConfig?: LlmConfig
+  ): Promise<void> {
+    if (!llmConfig?.apiKey) {
+      throw new Error('内置 Agent 模式需要配置 LLM API Key');
+    }
+
+    const sessionId = `agent-builtin-${task.id}-${stage.id}-${Date.now()}`;
+    this.currentSession = {
+      sessionId,
+      task,
+      stage,
+      optimizedPrompt,
+      isRunning: true,
+      llmConfig,
+    };
+
+    await contextHistory.logSystem(task.basePath, `Agent session started: builtin LLM for stage ${stage.name}`);
+
+    this.builtinRunner = new BuiltinAgentRunner();
+
+    this.builtinRunner.start(
+      optimizedPrompt.text,
+      llmConfig,
+      (chunk) => {
+        this.handleOutput(chunk);
+      },
+      () => {
+        this.handleExit(0);
+      },
+      (err) => {
+        this.handleOutput(`\n[Error] ${err.message}\n`);
+        this.handleExit(1);
+      }
+    );
+  }
+
   /**
    * 停止 Agent 会话
    */
@@ -166,6 +320,12 @@ export class AgentRunner {
     this.currentSession.isRunning = false;
 
     await contextHistory.logSystem(task.basePath, 'Agent session stopped');
+
+    // Stop builtin runner if active
+    if (this.builtinRunner) {
+      this.builtinRunner.stop();
+      this.builtinRunner = null;
+    }
 
     try {
       await invoke('destroy_session', { sessionId });
@@ -218,7 +378,20 @@ export class AgentRunner {
       throw new Error('没有正在运行的 Agent 会话');
     }
     await contextHistory.logUserInput(this.currentSession.task.basePath, input);
-    await this.writeToSession(input + '\n');
+
+    if (this.builtinRunner && this.currentSession.llmConfig) {
+      this.builtinRunner.sendFollowUp(
+        input,
+        this.currentSession.llmConfig,
+        (chunk) => this.handleOutput(chunk),
+        () => {},
+        (err) => {
+          this.handleOutput(`\n[Error] ${err.message}\n`);
+        }
+      );
+    } else {
+      await this.writeToSession(input + '\n');
+    }
   }
 
   private async writeToSession(data: string): Promise<void> {
