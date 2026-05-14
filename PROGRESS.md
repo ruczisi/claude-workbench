@@ -1,7 +1,7 @@
 # Cospace v2.0 进度记录
 
 > 最后更新：2026-05-14  
-> 当前版本：v0.2.3-alpha（MVP 完成）
+> 当前版本：v0.3.0-alpha（Workflow + KB 集成完成）
 
 ---
 
@@ -30,6 +30,9 @@
 - [x] 自然语言输入 + 意图解析（Phase 2）
 - [x] 提示词优化 + Agent 桥接（Phase 3）
 - [x] 任务自动推进（Phase 4）
+- [x] 自定义 workflow 加载（Sidebar 工作流标签 + `workflowManager`）
+- [x] 知识库集成（KB 路径配置 + 任务关联检索 + Agent 启动注入）
+- [x] App.tsx 完成 v0.3.0 全部集成点（10 处改动，TS / 单测 / 构建全绿）
 
 ## 关键信息
 

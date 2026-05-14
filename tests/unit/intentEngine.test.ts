@@ -195,11 +195,12 @@ describe('intentEngine', () => {
         'start_stage',
         'complete_stage',
         'advance_stage',
+        'search_knowledge',
         'ask_question',
         'general_chat',
       ];
       // Type check only — if this compiles, the types are correct
-      expect(validTypes.length).toBe(6);
+      expect(validTypes.length).toBe(7);
     });
   });
 });

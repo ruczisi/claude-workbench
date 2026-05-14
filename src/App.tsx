@@ -12,11 +12,10 @@ import { parseUserIntent } from './services/intentEngine';
 import { createDefaultLlmConfig, resolveLlmConfig, type LlmConfig } from './services/llmConfig';
 import { agentRunner, type AgentKeyInfo, type AgentSession } from './services/agentRunner';
 import { fileWatcher } from './services/fileWatcher';
-// TODO(v0.3.0): Re-enable when App.tsx integration is complete
-// import { workflowManager, type SavedWorkflow } from './services/workflowManager';
-// import { knowledgeBase } from './services/knowledgeBase';
+import { workflowManager, type SavedWorkflow } from './services/workflowManager';
+import { knowledgeBase } from './services/knowledgeBase';
 import type { ChatMessageData } from './components/ChatMessage';
-// import type { WorkflowConfig } from './services/workflowParser';
+import type { WorkflowConfig } from './services/workflowParser';
 
 const STORAGE_KEY = 'cospace-v2-workspace';
 
@@ -39,6 +38,9 @@ function App() {
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentOutput, setAgentOutput] = useState<string[]>([]);
   const [agentKeyInfos, setAgentKeyInfos] = useState<AgentKeyInfo[]>([]);
+  const [workflows, setWorkflows] = useState<SavedWorkflow[]>([]);
+  const [knowledgeBasePath, setKnowledgeBasePath] = useState<string | null>(null);
+  const [kbStats, setKbStats] = useState<{ total: number }>({ total: 0 });
 
   const {
     startupPhase,
@@ -47,19 +49,27 @@ function App() {
     watchedPath,
   } = useAppStore();
 
-  // Load LLM config on mount
+  // Load LLM config and KB config on mount
   useEffect(() => {
-    const loadLlmConfig = async () => {
+    const loadConfig = async () => {
       try {
-        const cfg = await invoke<{ llm?: LlmConfig }>('get_global_config');
-        if (cfg.llm && cfg.llm.apiKey) {
+        const cfg = await invoke<{
+          llm?: LlmConfig;
+          knowledge_base?: { root_path: string };
+        }>('get_global_config');
+        if (cfg.llm?.apiKey) {
           setLlmConfig(resolveLlmConfig(cfg.llm));
+        }
+        if (cfg.knowledge_base?.root_path) {
+          knowledgeBase.setRootPath(cfg.knowledge_base.root_path);
+          setKnowledgeBasePath(cfg.knowledge_base.root_path);
+          setKbStats(knowledgeBase.getStats());
         }
       } catch {
         // Use default config
       }
     };
-    loadLlmConfig();
+    loadConfig();
   }, []);
 
   // On mount: check for saved workspace and load task history
@@ -73,6 +83,21 @@ function App() {
     }
     taskManager.loadFromStorage();
   }, [setWatchedPath, setStartupPhase]);
+
+  // Scan workflows directory when watchedPath changes
+  useEffect(() => {
+    if (!watchedPath) return;
+    const scan = async () => {
+      try {
+        const wfPath = await join(watchedPath, 'workflows');
+        const loaded = await workflowManager.loadWorkflows(wfPath);
+        setWorkflows(loaded);
+      } catch {
+        // No workflows dir or no workflows
+      }
+    };
+    scan();
+  }, [watchedPath]);
 
   const addMessage = useCallback((role: ChatMessageData['role'], content: string) => {
     setChatMessages((prev) => [...prev, { id: generateId(), role, content, timestamp: Date.now() }]);
@@ -134,7 +159,7 @@ function App() {
 
   // Create task from chat intent
   const createTaskFromIntent = useCallback(
-    async (name: string, description?: string): Promise<Task | null> => {
+    async (name: string, description?: string, workflow?: WorkflowConfig): Promise<Task | null> => {
       if (!watchedPath) {
         addMessage('assistant', '请先选择工作区才能创建任务。');
         return null;
@@ -143,7 +168,7 @@ function App() {
         const taskBasePath = await join(watchedPath, 'tasks', `task-${Date.now()}`);
         const task = await taskManager.createTaskFromWorkflow(
           name,
-          STANDARD_4STAGE_WORKFLOW,
+          workflow || STANDARD_4STAGE_WORKFLOW,
           taskBasePath,
           description
         );
@@ -293,6 +318,21 @@ function App() {
             );
             break;
           }
+
+          case 'search_knowledge': {
+            if (!currentTask) {
+              addMessage('assistant', '没有活跃的任务，请先创建任务。');
+              break;
+            }
+            const results = await knowledgeBase.searchForTask(currentTask);
+            if (results.length === 0) {
+              addMessage('assistant', '未在知识库中找到相关文档。');
+            } else {
+              const list = results.map((r) => `- ${r.title} (${r.type})`).join('\n');
+              addMessage('assistant', `📚 知识库检索结果：\n${list}`);
+            }
+            break;
+          }
         }
       } catch (err) {
         console.error('[Cospace] Chat handling error:', err);
@@ -357,7 +397,8 @@ function App() {
       setAgentRunning(true);
       addMessage('system', `正在启动 Agent（${agentConfig.type}）...`);
 
-      await agentRunner.startAgent(currentTask, stage, agentConfig);
+      const kbResults = await knowledgeBase.searchForTask(currentTask);
+      await agentRunner.startAgent(currentTask, stage, agentConfig, kbResults);
       setAgentSession(agentRunner.session);
       addMessage('system', 'Agent 已启动，正在执行任务...');
     } catch (err) {
@@ -444,6 +485,53 @@ function App() {
     }
   };
 
+  // Select knowledge base directory
+  const handleSelectKnowledgeBase = useCallback(async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: '选择知识库根目录',
+      });
+      if (selected) {
+        knowledgeBase.setRootPath(selected);
+        setKnowledgeBasePath(selected);
+        setKbStats(knowledgeBase.getStats());
+        const cfg = await invoke<Record<string, unknown>>('get_global_config');
+        await invoke('save_global_config', {
+          config: {
+            ...cfg,
+            knowledge_base: {
+              root_path: selected,
+              concepts_dir: '20-Wiki/Concepts',
+              projects_dir: '20-Wiki/Projects',
+              auto_inject: true,
+              max_results: 10,
+            },
+          },
+        });
+      }
+    } catch (err) {
+      console.error('[Cospace] KB config save error:', err);
+    }
+  }, []);
+
+  // Use a custom workflow to create a task
+  const handleUseWorkflow = useCallback(
+    async (workflow: WorkflowConfig) => {
+      if (!watchedPath) {
+        addMessage('assistant', '请先选择工作区才能创建任务。');
+        return;
+      }
+      addMessage('assistant', `正在使用工作流「${workflow.name}」创建任务...`);
+      const task = await createTaskFromIntent(workflow.name, workflow.description, workflow);
+      if (task) {
+        addMessage('assistant', `✅ 已使用工作流「${task.name}」创建任务。`);
+      }
+    },
+    [watchedPath, addMessage, createTaskFromIntent]
+  );
+
   return (
     <div className={`${theme} h-full flex flex-col bg-gray-900 text-gray-100`}>
       {/* Startup overlay */}
@@ -470,6 +558,11 @@ function App() {
             watchedPath={watchedPath}
             currentTask={currentTask}
             onSelectTask={handleSelectTask}
+            workflows={workflows}
+            onUseWorkflow={handleUseWorkflow}
+            knowledgeBasePath={knowledgeBasePath}
+            kbStats={kbStats}
+            onSelectKnowledgeBase={handleSelectKnowledgeBase}
           />
 
           <div className="flex-1 flex flex-col border-x border-gray-700">
