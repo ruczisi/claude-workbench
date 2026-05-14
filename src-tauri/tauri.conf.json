@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Cospace",
-  "version": "0.2.0",
+  "version": "0.6.0",
   "identifier": "com.cospace.app",
   "build": {
     "frontendDist": "../dist",
@@ -15,8 +15,8 @@
         "title": "Cospace",
         "width": 1400,
         "height": 900,
-        "minWidth": 1000,
-        "minHeight": 600,
+        "minWidth": 375,
+        "minHeight": 300,
         "resizable": true,
         "fullscreen": false,
         "center": true

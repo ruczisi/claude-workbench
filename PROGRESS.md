@@ -1,7 +1,7 @@
 # Cospace v2.0 进度记录
 
 > 最后更新：2026-05-14  
-> 当前版本：v0.6.0-alpha（Agent 暂停/恢复 + 响应式布局完成）
+> 当前版本：v0.6.1-alpha（Sprint 5 Polish 完成）
 
 ---
 

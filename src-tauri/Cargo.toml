@@ -1,6 +1,6 @@
 [package]
 name = "cospace"
-version = "0.2.0"
+version = "0.6.0"
 description = "A visual workbench integrating AI agents with content preview"
 authors = ["ruczisi"]
 license = "MIT"

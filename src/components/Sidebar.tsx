@@ -13,6 +13,7 @@ import {
   validateLlmConfig,
   type LlmConfig,
 } from '../services/llmConfig';
+import { callLlm } from '../services/llmService';
 
 interface SidebarProps {
   onCreateTask?: () => void;
@@ -138,10 +139,19 @@ export default function Sidebar({
       return;
     }
     setTestResult('测试中...');
-    // TODO: Implement actual API test in Phase 2
-    setTimeout(() => {
-      setTestResult('测试功能将在 Phase 2 实现');
-    }, 500);
+    try {
+      const result = await callLlm(config.llm, {
+        messages: [{ role: 'user', content: 'Hello' }],
+        maxTokens: 10,
+      });
+      if (result.content || result.usage) {
+        setTestResult(`连接成功 — 模型响应正常${result.usage ? `（消耗 ${result.usage.totalTokens} tokens）` : ''}`);
+      } else {
+        setTestResult('连接异常 — 模型返回空响应');
+      }
+    } catch (err) {
+      setTestResult(`连接失败 — ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const getStatusColor = (status: Task['status']) => {
