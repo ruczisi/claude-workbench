@@ -68,6 +68,7 @@ export default function Sidebar({
   const [testResult, setTestResult] = useState('');
   const [editingWorkflow, setEditingWorkflow] = useState<SavedWorkflow | null>(null);
   const [creatingWorkflow, setCreatingWorkflow] = useState(false);
+  const [hoveredTab, setHoveredTab] = useState<string | null>(null);
 
   // Load config when settings tab is opened
   useEffect(() => {
@@ -210,12 +211,13 @@ export default function Sidebar({
             <button
               key={tab.id}
               onClick={() => handleIconClick(tab.id)}
+              onMouseEnter={() => setHoveredTab(tab.id)}
+              onMouseLeave={() => setHoveredTab(null)}
               className={`relative w-full h-11 flex items-center justify-center transition-colors ${
                 activeTab === tab.id && panelOpen
                   ? 'text-white'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
-              title={tab.label}
             >
               {/* Active indicator — left border */}
               {activeTab === tab.id && panelOpen && (
@@ -223,6 +225,13 @@ export default function Sidebar({
                 />
               )}
               <span className="text-lg">{tab.icon}</span>
+              {/* Custom tooltip */}
+              {hoveredTab === tab.id && !panelOpen && (
+                <div className="absolute left-full ml-2 px-2 py-1 bg-gray-700 text-gray-200 text-xs rounded whitespace-nowrap z-50 pointer-events-none">
+                  {tab.label}
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-1.5 h-1.5 bg-gray-700 rotate-45" />
+                </div>
+              )}
             </button>
           ))}
         </div>
@@ -323,9 +332,12 @@ export default function Sidebar({
               <div className="space-y-3">
                 <button
                   onClick={() => setCreatingWorkflow(true)}
-                  className="w-full text-left px-3 py-2 text-xs bg-primary-600 hover:bg-primary-700 rounded text-white"
+                  className="w-full text-left px-3 py-2 text-xs bg-primary-600 hover:bg-primary-700 rounded text-white flex items-center gap-1.5"
                 >
-                  + 新建工作流
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  新建工作流
                 </button>
 
                 {!workflows || workflows.length === 0 ? (
@@ -375,7 +387,19 @@ export default function Sidebar({
               <div className="space-y-4">
                 {/* LLM Configuration */}
                 <div className="bg-gray-900 rounded p-3">
-                  <h3 className="text-xs font-medium text-primary-400 mb-3">🤖 LLM 配置（意图解析）</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-medium text-primary-400">🤖 LLM 配置（意图解析）</h3>
+                    {!config ? null : config.agent?.type === 'builtin' ? (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-red-900/50 text-red-300 rounded">必需</span>
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 bg-gray-700 text-gray-400 rounded">可选</span>
+                    )}
+                  </div>
+                  {config && config.agent?.type !== 'builtin' && (
+                    <p className="text-[10px] text-gray-500 mb-3">
+                      当前使用外部 Agent 工具（{config.agent?.type === 'claude' ? 'Claude Code' : config.agent?.type === 'codex' ? 'Codex' : '自定义'}），LLM 仅用于意图解析。不配置也可使用基础功能。
+                    </p>
+                  )}
 
                   {!config ? (
                     <div className="text-xs text-gray-500 text-center py-2">加载中...</div>

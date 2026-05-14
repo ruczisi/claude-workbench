@@ -10,7 +10,7 @@ import TaskCreateModal from './components/TaskCreateModal';
 import { useAppStore } from './stores/appStore';
 import { taskManager, type Task } from './services/taskManager';
 import { STANDARD_4STAGE_WORKFLOW } from './services/embeddedWorkflow';
-import { parseUserIntent, isLlmConfigValid } from './services/intentEngine';
+import { parseUserIntent, parseUserIntentSimple, isLlmConfigValid } from './services/intentEngine';
 import { createDefaultLlmConfig, resolveLlmConfig, type LlmConfig } from './services/llmConfig';
 import { agentRunner, type AgentKeyInfo, type AgentSession } from './services/agentRunner';
 import { fileWatcher } from './services/fileWatcher';
@@ -234,24 +234,27 @@ function App() {
     async (message: string) => {
       addMessage('user', message);
 
-      // Pre-check LLM config
-      const configCheck = isLlmConfigValid(llmConfig);
-      if (!configCheck.valid) {
-        addMessage('assistant', configCheck.message || '请先配置 LLM（侧边栏 → 设置）');
-        return;
-      }
-
       setChatLoading(true);
 
       try {
-        const intent = await parseUserIntent(
-          message,
-          {
+        const configCheck = isLlmConfigValid(llmConfig);
+        let intent;
+        if (!configCheck.valid) {
+          // LLM not configured — use simple keyword-based parser
+          intent = parseUserIntentSimple(message, {
             currentTask: currentTask || undefined,
             currentStageId: currentTask?.currentStageId,
-          },
-          llmConfig
-        );
+          });
+        } else {
+          intent = await parseUserIntent(
+            message,
+            {
+              currentTask: currentTask || undefined,
+              currentStageId: currentTask?.currentStageId,
+            },
+            llmConfig
+          );
+        }
 
         switch (intent.type) {
           case 'create_task': {

@@ -72,6 +72,62 @@ export function isLlmConfigValid(config: LlmConfig): { valid: boolean; message?:
 }
 
 /**
+ * 简单关键词意图解析（LLM 未配置时的降级方案）
+ */
+export function parseUserIntentSimple(input: string, _context: ParseContext): UserIntent {
+  const text = input.toLowerCase().trim();
+
+  // Create task patterns
+  if (/^(创建|新建|添加|写|做|来).*(任务|方案|文档|计划|报告)/.test(text) || /^(帮我|给我).*(写|做|创建|新建)/.test(text)) {
+    const name = text.replace(/^(创建|新建|添加|写|做|来|帮我|给我)\s*/, '').replace(/(任务|方案|文档|计划|报告)$/, '').trim() || '新任务';
+    return { type: 'create_task', confidence: 0.8, params: { name } };
+  }
+
+  // Start stage patterns
+  if (/(开始|启动).*(阶段|需求|框架|内容|审核)/.test(text) || /^开始/.test(text)) {
+    return { type: 'start_stage', confidence: 0.7 };
+  }
+
+  // Complete stage patterns
+  if (/(完成|结束|搞定|做完).*(阶段|这一步|当前)/.test(text) || /^(完成|结束|搞定)$/.test(text)) {
+    return { type: 'complete_stage', confidence: 0.7 };
+  }
+
+  // Advance stage patterns
+  if (/(下一|继续|推进|下一步|下一个)/.test(text)) {
+    return { type: 'advance_stage', confidence: 0.7 };
+  }
+
+  // Jump stage patterns
+  const stageJumpMatch = text.match(/(跳到|跳转|切换到?|去).*(阶段?\s*\d|需求确认|框架构思|内容撰写|审核定稿)/);
+  if (stageJumpMatch) {
+    let stageId = '';
+    if (text.includes('需求') || text.includes('阶段1') || text.includes('阶段 1')) stageId = 'stage1';
+    else if (text.includes('框架') || text.includes('阶段2') || text.includes('阶段 2')) stageId = 'stage2';
+    else if (text.includes('内容') || text.includes('阶段3') || text.includes('阶段 3')) stageId = 'stage3';
+    else if (text.includes('审核') || text.includes('阶段4') || text.includes('阶段 4')) stageId = 'stage4';
+    return { type: 'jump_stage', confidence: 0.7, params: { stageId } };
+  }
+
+  // Search knowledge patterns
+  if (/(搜索|查找|查询|知识库).*/.test(text)) {
+    return { type: 'search_knowledge', confidence: 0.7 };
+  }
+
+  // Greeting patterns
+  if (/^(你好|您好|hello|hi|hey|在吗|在嘛)/.test(text)) {
+    return { type: 'general_chat', confidence: 0.9, response: '你好！有什么我可以帮你的吗？' };
+  }
+
+  // Default fallback
+  return {
+    type: 'ask_question',
+    confidence: 0.5,
+    clarification: '我没有完全理解你的意思。你可以说"创建任务"、"开始阶段"、"下一阶段"等指令。',
+  };
+}
+
+/**
  * 解析用户输入为结构化意图
  */
 export async function parseUserIntent(
