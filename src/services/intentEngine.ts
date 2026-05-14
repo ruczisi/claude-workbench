@@ -235,6 +235,44 @@ function validateIntentType(type: unknown): IntentType {
   return validTypes.includes(type as IntentType) ? (type as IntentType) : 'general_chat';
 }
 
+/**
+ * 检测输入是否为阶段管理元指令（快捷命令，不走完整意图解析）
+ */
+export function isStageManagementCommand(input: string): IntentType | null {
+  const text = input.toLowerCase().trim();
+
+  // 完成/结束阶段
+  if (/^(完成|结束|搞定|做完|结束阶段|完成阶段)$/.test(text)
+    || /(完成|结束|搞定).*(阶段|这一步|当前)/.test(text)) {
+    return 'complete_stage';
+  }
+
+  // 下一阶段/推进
+  if (/^(下一|继续|推进|下一步|下一个|前进)$/.test(text)
+    || /(下一|继续|推进).*(阶段|步|步|步)/.test(text)) {
+    return 'advance_stage';
+  }
+
+  // 开始阶段
+  if (/^(开始|启动).*(阶段|需求|框架|内容|审核)/.test(text)
+    || /^开始/.test(text)) {
+    return 'start_stage';
+  }
+
+  // 跳转到指定阶段
+  const stageJumpMatch = text.match(/(跳到|跳转|切换到?|去).*(阶段?\s*\d|需求确认|框架构思|内容撰写|审核定稿)/);
+  if (stageJumpMatch) {
+    return 'jump_stage';
+  }
+
+  // 搜索知识库
+  if (/^(搜索|查找|查询).*/.test(text)) {
+    return 'search_knowledge';
+  }
+
+  return null;
+}
+
 function postProcessIntent(
   intent: UserIntent,
   context: ParseContext

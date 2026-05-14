@@ -32,6 +32,8 @@ interface WorkbenchProps {
   historyEntries?: ContextEntry[];
   // Export
   onExportTask?: () => void;
+  // Intent parsing mode indicator
+  intentMode?: 'llm' | 'keyword' | null;
 }
 
 export default function Workbench({
@@ -54,6 +56,7 @@ export default function Workbench({
   onSendAgentInput,
   historyEntries = [],
   onExportTask,
+  intentMode = null,
 }: WorkbenchProps) {
   const [activePanel, setActivePanel] = useState<'chat' | 'agent-run' | 'agent-ctx' | 'history'>('chat');
 
@@ -193,7 +196,7 @@ export default function Workbench({
       </div>
 
       {/* Panel Tabs */}
-      <div className="flex border-b border-gray-700 bg-gray-800">
+      <div className="flex border-b border-gray-700 bg-gray-800 items-center">
         <button
           onClick={() => setActivePanel('chat')}
           className={`flex-1 py-2 text-xs font-medium ${
@@ -234,6 +237,18 @@ export default function Workbench({
         >
           📜 历史 ({historyEntries.length})
         </button>
+        {intentMode && (
+          <div
+            className={`px-2 py-1 mx-1 text-[10px] rounded whitespace-nowrap ${
+              intentMode === 'llm'
+                ? 'bg-primary-900/40 text-primary-300'
+                : 'bg-yellow-900/30 text-yellow-400'
+            }`}
+            title={intentMode === 'llm' ? '使用 LLM 进行意图解析' : '使用关键词匹配进行意图解析（未配置 LLM）'}
+          >
+            {intentMode === 'llm' ? '🧠 LLM' : '🔤 关键词'}
+          </div>
+        )}
       </div>
 
       {/* Panel Content */}

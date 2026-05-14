@@ -321,120 +321,201 @@ pub struct DetectedLlmConfig {
     pub source: String,
 }
 
-/// 从环境变量自动检测 LLM 配置
-#[tauri::command]
-pub fn detect_llm_config() -> Result<Option<DetectedLlmConfig>, String> {
-    // 检测优先级：智谱(免费) > DeepSeek > OpenAI > Anthropic > 阿里云
-
-    if let Ok(api_key) = std::env::var("ZHIPU_API_KEY") {
-        if !api_key.is_empty() {
-            return Ok(Some(DetectedLlmConfig {
-                provider: "zhipu".to_string(),
-                api_key,
-                base_url: "https://open.bigmodel.cn/api/paas/v4/".to_string(),
-                model: "glm-4-flash".to_string(),
-                source: "环境变量 ZHIPU_API_KEY".to_string(),
-            }));
-        }
-    }
-
-    if let Ok(api_key) = std::env::var("DEEPSEEK_API_KEY") {
-        if !api_key.is_empty() {
-            return Ok(Some(DetectedLlmConfig {
-                provider: "deepseek".to_string(),
-                api_key,
-                base_url: "https://api.deepseek.com/v1".to_string(),
-                model: "deepseek-v3".to_string(),
-                source: "环境变量 DEEPSEEK_API_KEY".to_string(),
-            }));
-        }
-    }
-
-    if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
-        if !api_key.is_empty() {
-            return Ok(Some(DetectedLlmConfig {
-                provider: "openai".to_string(),
-                api_key,
-                base_url: "https://api.openai.com/v1".to_string(),
-                model: "gpt-4o-mini".to_string(),
-                source: "环境变量 OPENAI_API_KEY".to_string(),
-            }));
-        }
-    }
-
-    if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
-        if !api_key.is_empty() {
-            return Ok(Some(DetectedLlmConfig {
-                provider: "anthropic".to_string(),
-                api_key,
-                base_url: "https://api.anthropic.com".to_string(),
-                model: "claude-3-haiku".to_string(),
-                source: "环境变量 ANTHROPIC_API_KEY".to_string(),
-            }));
-        }
-    }
-
-    if let Ok(api_key) = std::env::var("DASHSCOPE_API_KEY") {
-        if !api_key.is_empty() {
-            return Ok(Some(DetectedLlmConfig {
-                provider: "aliyun".to_string(),
-                api_key,
-                base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1".to_string(),
-                model: "qwen-turbo".to_string(),
-                source: "环境变量 DASHSCOPE_API_KEY".to_string(),
-            }));
-        }
-    }
-
-    // 尝试从 .env 文件读取
-    if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
-        let env_paths = [
-            std::path::PathBuf::from(&home).join(".env"),
-            std::path::PathBuf::from(&home).join(".cospace").join(".env"),
-        ];
-        for env_path in &env_paths {
-            if let Ok(content) = std::fs::read_to_string(env_path) {
-                for line in content.lines() {
-                    if let Some((key, value)) = line.split_once('=') {
-                        let key = key.trim();
-                        let value = value.trim().trim_matches('"').trim_matches('\'');
-                        if value.is_empty() {
-                            continue;
-                        }
-                        match key {
-                            "ZHIPU_API_KEY" => {
-                                return Ok(Some(DetectedLlmConfig {
-                                    provider: "zhipu".to_string(),
-                                    api_key: value.to_string(),
-                                    base_url: "https://open.bigmodel.cn/api/paas/v4/".to_string(),
-                                    model: "glm-4-flash".to_string(),
-                                    source: format!(".env 文件: {}", env_path.display()),
-                                }));
-                            }
-                            "DEEPSEEK_API_KEY" => {
-                                return Ok(Some(DetectedLlmConfig {
-                                    provider: "deepseek".to_string(),
-                                    api_key: value.to_string(),
-                                    base_url: "https://api.deepseek.com/v1".to_string(),
-                                    model: "deepseek-v3".to_string(),
-                                    source: format!(".env 文件: {}", env_path.display()),
-                                }));
-                            }
-                            "OPENAI_API_KEY" => {
-                                return Ok(Some(DetectedLlmConfig {
-                                    provider: "openai".to_string(),
-                                    api_key: value.to_string(),
-                                    base_url: "https://api.openai.com/v1".to_string(),
-                                    model: "gpt-4o-mini".to_string(),
-                                    source: format!(".env 文件: {}", env_path.display()),
-                                }));
-                            }
-                            _ => {}
-                        }
+/// 在 JSON 值中递归搜索指定键，返回找到的第一个字符串值
+fn find_json_string(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                if keys.contains(&k.as_str()) {
+                    if let Some(s) = v.as_str() {
+                        return Some(s.to_string());
                     }
                 }
+                if let Some(found) = find_json_string(v, keys) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                if let Some(found) = find_json_string(v, keys) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// 尝试从指定路径的 JSON 配置文件中读取 LLM 配置
+fn try_read_agent_config(path: &std::path::Path) -> Option<DetectedLlmConfig> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    let api_key = find_json_string(&json, &[
+        "apiKey", "api_key", "anthropicApiKey", "openaiApiKey",
+        "deepseekApiKey", "zhipuApiKey", "dashscopeApiKey",
+    ])?;
+    if api_key.is_empty() {
+        return None;
+    }
+
+    let base_url = find_json_string(&json, &[
+        "baseUrl", "base_url", "apiBaseUrl", "api_base_url",
+    ]);
+    let model = find_json_string(&json, &[
+        "model", "defaultModel", "default_model",
+    ]);
+    let provider = find_json_string(&json, &[
+        "provider", "apiProvider", "api_provider",
+    ]);
+
+    // 根据 API key 前缀或配置路径推断 provider
+    let inferred_provider = if let Some(ref p) = provider {
+        p.to_lowercase()
+    } else if api_key.starts_with("sk-ant-") || api_key.starts_with("sk-ant-api03-") {
+        "anthropic".to_string()
+    } else if path.to_string_lossy().to_lowercase().contains("claude") {
+        "anthropic".to_string()
+    } else if api_key.starts_with("sk-ds-") || api_key.starts_with("sk-or-v1-") {
+        "deepseek".to_string()
+    } else if path.to_string_lossy().to_lowercase().contains("deepseek") {
+        "deepseek".to_string()
+    } else if api_key.starts_with("sk-zhipu-") || api_key.starts_with("zhipu-") {
+        "zhipu".to_string()
+    } else if path.to_string_lossy().to_lowercase().contains("zhipu")
+        || path.to_string_lossy().to_lowercase().contains("bigmodel")
+    {
+        "zhipu".to_string()
+    } else if api_key.starts_with("sk-") {
+        // 通用 OpenAI 格式 key
+        if path.to_string_lossy().to_lowercase().contains("openai") {
+            "openai".to_string()
+        } else if path.to_string_lossy().to_lowercase().contains("codex") {
+            "openai".to_string()
+        } else {
+            "openai".to_string() // 默认
+        }
+    } else {
+        "openai".to_string() // 兜底
+    };
+
+    let (default_base_url, default_model) = match inferred_provider.as_str() {
+        "anthropic" => ("https://api.anthropic.com", "claude-3-haiku"),
+        "deepseek" => ("https://api.deepseek.com/v1", "deepseek-v3"),
+        "zhipu" => ("https://open.bigmodel.cn/api/paas/v4/", "glm-4-flash"),
+        "aliyun" | "dashscope" => ("https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-turbo"),
+        _ => ("https://api.openai.com/v1", "gpt-4o-mini"),
+    };
+
+    Some(DetectedLlmConfig {
+        provider: inferred_provider,
+        api_key,
+        base_url: base_url.unwrap_or_else(|| default_base_url.to_string()),
+        model: model.unwrap_or_else(|| default_model.to_string()),
+        source: format!("Agent 配置文件: {}", path.display()),
+    })
+}
+
+/// 从环境变量自动检测 LLM 配置（降级方案）
+fn detect_llm_from_env() -> Option<DetectedLlmConfig> {
+    let env_configs = [
+        ("ZHIPU_API_KEY", "zhipu", "https://open.bigmodel.cn/api/paas/v4/", "glm-4-flash"),
+        ("DEEPSEEK_API_KEY", "deepseek", "https://api.deepseek.com/v1", "deepseek-v3"),
+        ("OPENAI_API_KEY", "openai", "https://api.openai.com/v1", "gpt-4o-mini"),
+        ("ANTHROPIC_API_KEY", "anthropic", "https://api.anthropic.com", "claude-3-haiku"),
+        ("DASHSCOPE_API_KEY", "aliyun", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-turbo"),
+    ];
+
+    for (env_var, provider, base_url, model) in &env_configs {
+        if let Ok(api_key) = std::env::var(env_var) {
+            if !api_key.is_empty() {
+                return Some(DetectedLlmConfig {
+                    provider: provider.to_string(),
+                    api_key,
+                    base_url: base_url.to_string(),
+                    model: model.to_string(),
+                    source: format!("环境变量 {}", env_var),
+                });
             }
         }
+    }
+    None
+}
+
+/// 从 Agent 工具配置文件自动检测 LLM 配置
+#[tauri::command]
+pub fn detect_llm_config() -> Result<Option<DetectedLlmConfig>, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Cannot find home directory")?;
+
+    // 1. 扫描 Claude Code 配置文件
+    let claude_paths = [
+        std::path::PathBuf::from(&home).join(".claude").join("settings.json"),
+        std::path::PathBuf::from(&home).join(".claude").join("config.json"),
+    ];
+    #[cfg(target_os = "windows")]
+    let claude_paths_win: Vec<std::path::PathBuf> = {
+        let mut paths = vec![];
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            paths.push(std::path::PathBuf::from(&appdata).join("Claude").join("settings.json"));
+        }
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            paths.push(std::path::PathBuf::from(&localappdata).join("Claude").join("settings.json"));
+        }
+        paths
+    };
+    #[cfg(not(target_os = "windows"))]
+    let claude_paths_win: Vec<std::path::PathBuf> = vec![];
+
+    for path in claude_paths.iter().chain(claude_paths_win.iter()) {
+        if let Some(config) = try_read_agent_config(path) {
+            return Ok(Some(config));
+        }
+    }
+
+    // 2. 扫描 Codex 配置文件
+    let codex_paths = [
+        std::path::PathBuf::from(&home).join(".codex").join("config.json"),
+        std::path::PathBuf::from(&home).join(".codex").join("settings.json"),
+    ];
+    #[cfg(target_os = "windows")]
+    let codex_paths_win: Vec<std::path::PathBuf> = {
+        let mut paths = vec![];
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            paths.push(std::path::PathBuf::from(&appdata).join("Codex").join("config.json"));
+        }
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            paths.push(std::path::PathBuf::from(&localappdata).join("Codex").join("config.json"));
+        }
+        paths
+    };
+    #[cfg(not(target_os = "windows"))]
+    let codex_paths_win: Vec<std::path::PathBuf> = vec![];
+
+    for path in codex_paths.iter().chain(codex_paths_win.iter()) {
+        if let Some(config) = try_read_agent_config(path) {
+            return Ok(Some(config));
+        }
+    }
+
+    // 3. 扫描通用 AI 工具配置目录
+    let generic_paths = [
+        std::path::PathBuf::from(&home).join(".config").join("ai").join("config.json"),
+        std::path::PathBuf::from(&home).join(".ai").join("config.json"),
+    ];
+    for path in &generic_paths {
+        if let Some(config) = try_read_agent_config(path) {
+            return Ok(Some(config));
+        }
+    }
+
+    // 4. 降级：从环境变量检测
+    if let Some(config) = detect_llm_from_env() {
+        return Ok(Some(config));
     }
 
     Ok(None)

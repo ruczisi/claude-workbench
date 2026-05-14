@@ -10,7 +10,7 @@ import TaskCreateModal from './components/TaskCreateModal';
 import { useAppStore } from './stores/appStore';
 import { taskManager, type Task } from './services/taskManager';
 import { STANDARD_4STAGE_WORKFLOW } from './services/embeddedWorkflow';
-import { parseUserIntent, parseUserIntentSimple, isLlmConfigValid } from './services/intentEngine';
+import { parseUserIntent, parseUserIntentSimple, isLlmConfigValid, isStageManagementCommand } from './services/intentEngine';
 import { createDefaultLlmConfig, resolveLlmConfig, type LlmConfig } from './services/llmConfig';
 import { agentRunner, type AgentKeyInfo, type AgentSession } from './services/agentRunner';
 import { fileWatcher } from './services/fileWatcher';
@@ -38,6 +38,7 @@ function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessageData[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
   const [llmConfig, setLlmConfig] = useState<LlmConfig>(createDefaultLlmConfig());
+  const [intentMode, setIntentMode] = useState<'llm' | 'keyword' | null>(null);
 
   // Agent runner state
   const [agentSession, setAgentSession] = useState<AgentSession | null>(null);
@@ -78,6 +79,7 @@ function App() {
         }>('get_global_config');
         if (cfg.llm?.apiKey) {
           setLlmConfig(resolveLlmConfig(cfg.llm));
+          setIntentMode('llm');
         } else {
           // Auto-detect LLM config from environment / agent configs
           try {
@@ -96,6 +98,7 @@ function App() {
                 model: detected.model,
               };
               setLlmConfig(autoConfig);
+              setIntentMode('llm');
               // Save to global config for persistence
               const fullCfg = await invoke<Record<string, unknown>>('get_global_config');
               await invoke('save_global_config', {
@@ -105,9 +108,11 @@ function App() {
                 },
               });
               // Auto-detected config saved silently
+            } else {
+              setIntentMode('keyword');
             }
           } catch {
-            // Auto-detection failed, silently ignore
+            setIntentMode('keyword');
           }
         }
         if (cfg.knowledge_base?.root_path) {
@@ -264,19 +269,112 @@ function App() {
   const handleSendChat = useCallback(
     async (message: string) => {
       addMessage('user', message);
-
       setChatLoading(true);
 
       try {
+        const runningStage = currentTask?.currentStageId
+          ? currentTask.stages.find((s) => s.id === currentTask.currentStageId)
+          : undefined;
+
+        // === Phase 1: Task exists + stage is running → forward to agent or handle meta-commands ===
+        if (currentTask && runningStage?.status === 'running') {
+          // Check if it's a stage-management meta-command
+          const metaCommand = isStageManagementCommand(message);
+
+          if (metaCommand) {
+            // Handle meta-commands inline
+            switch (metaCommand) {
+              case 'complete_stage': {
+                const updated = await taskManager.completeStage(currentTask.id, currentTask.currentStageId!);
+                if (updated) {
+                  setCurrentTask(updated);
+                  taskManager.saveToStorage();
+                  const nextStage = updated.stages.find((s) => s.status === 'running');
+                  if (nextStage) {
+                    addMessage('assistant', `✅ 阶段完成！已自动推进到「${nextStage.name}」。`);
+                  } else {
+                    addMessage('assistant', '🎉 所有阶段已完成！任务结束。');
+                  }
+                }
+                break;
+              }
+              case 'advance_stage': {
+                const updated = await taskManager.completeStage(currentTask.id, currentTask.currentStageId!);
+                if (updated) {
+                  setCurrentTask(updated);
+                  taskManager.saveToStorage();
+                  const nextStage = updated.stages.find((s) => s.status === 'running');
+                  if (nextStage) {
+                    addMessage('assistant', `✅ 阶段完成！已自动推进到「${nextStage.name}」。`);
+                  } else {
+                    addMessage('assistant', '🎉 所有阶段已完成！任务结束。');
+                  }
+                }
+                break;
+              }
+              case 'jump_stage': {
+                const text = message.toLowerCase();
+                let targetStageId = '';
+                if (text.includes('需求') || text.includes('阶段1') || text.includes('阶段 1')) targetStageId = 'stage1';
+                else if (text.includes('框架') || text.includes('阶段2') || text.includes('阶段 2')) targetStageId = 'stage2';
+                else if (text.includes('内容') || text.includes('阶段3') || text.includes('阶段 3')) targetStageId = 'stage3';
+                else if (text.includes('审核') || text.includes('阶段4') || text.includes('阶段 4')) targetStageId = 'stage4';
+                if (targetStageId) {
+                  const updated = taskManager.jumpToStage(currentTask.id, targetStageId);
+                  if (updated) {
+                    setCurrentTask(updated);
+                    taskManager.saveToStorage();
+                    const targetStage = updated.stages.find((s) => s.id === targetStageId);
+                    if (targetStage) showStageGuidance(targetStage);
+                  }
+                }
+                break;
+              }
+              case 'search_knowledge': {
+                const results = await knowledgeBase.searchForTask(currentTask);
+                if (results.length === 0) {
+                  addMessage('assistant', '未在知识库中找到相关文档。');
+                } else {
+                  const list = results.map((r) => `- ${r.title} (${r.type})`).join('\n');
+                  addMessage('assistant', `📚 知识库检索结果：\n${list}`);
+                }
+                break;
+              }
+              default:
+                break;
+            }
+            setChatLoading(false);
+            return;
+          }
+
+          // Not a meta-command → forward to agent if running
+          if (agentRunning && agentSession) {
+            addMessage('system', `💬 已将消息转发给 Agent（${runningStage.name}）...`);
+            await agentRunner.sendInput(message);
+            setChatLoading(false);
+            return;
+          }
+
+          // Agent not running → prompt user to start it
+          addMessage(
+            'assistant',
+            `当前阶段「${runningStage.name}」正在进行中。你可以：\n\n1. **输入"开始Agent"或切换到"Agent 运行"标签页启动 Agent**，之后你说的话会直接传给 Agent 执行\n2. **输入"完成阶段"** 标记此阶段已完成\n3. 继续输入阶段管理指令（如"下一阶段"、"跳到内容撰写"）`
+          );
+          setChatLoading(false);
+          return;
+        }
+
+        // === Phase 2: No running stage → use intent parsing normally ===
         const configCheck = isLlmConfigValid(llmConfig);
         let intent;
         if (!configCheck.valid) {
-          // LLM not configured — use simple keyword-based parser
+          setIntentMode('keyword');
           intent = parseUserIntentSimple(message, {
             currentTask: currentTask || undefined,
             currentStageId: currentTask?.currentStageId,
           });
         } else {
+          setIntentMode('llm');
           intent = await parseUserIntent(
             message,
             {
@@ -289,6 +387,14 @@ function App() {
 
         switch (intent.type) {
           case 'create_task': {
+            // If task already exists, ask whether to create new or continue
+            if (currentTask) {
+              addMessage(
+                'assistant',
+                `你当前已有任务「${currentTask.name}」（阶段：${currentTask.stages.find((s) => s.id === currentTask.currentStageId)?.name || '未开始'}）。\n\n要继续当前任务，请输入"开始阶段"或直接描述你要做的具体工作。\n要创建新任务，请说"确认创建新任务：${intent.params?.name || message}".`
+              );
+              break;
+            }
             const name = intent.params?.name || message;
             const desc = intent.params?.description;
             addMessage('assistant', `正在创建任务「${name}」...`);
@@ -296,7 +402,7 @@ function App() {
             if (task) {
               addMessage(
                 'assistant',
-                `✅ 已创建任务「${task.name}」。当前阶段：**${task.stages[0]?.name}**。点击"开始阶段"或输入"开始阶段"来启动。`
+                `✅ 已创建任务「${task.name}」。\n\n📋 **下一步**：输入"开始阶段"或点击上方的"开始阶段"按钮，启动「${task.stages[0]?.name}」阶段。启动后，你的输入会直接传给 Agent 执行。`
               );
             }
             break;
@@ -325,10 +431,16 @@ function App() {
             if (updated) {
               setCurrentTask(updated);
               taskManager.saveToStorage();
-              addMessage(
-                'assistant',
-                `🚀 已启动阶段「${stage.name}」。切换到 "Agent 指令" 标签页复制提示词，粘贴到你的 Agent 工具执行。`
-              );
+              showStageGuidance(stage);
+              // Auto-start agent for external tools
+              try {
+                const cfg = await invoke<{ agent?: { type: string } }>('get_global_config');
+                if (cfg.agent?.type && cfg.agent.type !== 'builtin') {
+                  await doStartAgent(updated, stage);
+                }
+              } catch (err) {
+                console.error('[Cospace] Auto-start agent failed:', err);
+              }
             }
             break;
           }
@@ -344,10 +456,7 @@ function App() {
               taskManager.saveToStorage();
               const nextStage = updated.stages.find((s) => s.status === 'running');
               if (nextStage) {
-                addMessage(
-                  'assistant',
-                  `✅ 阶段完成！已自动推进到「${nextStage.name}」。`
-                );
+                addMessage('assistant', `✅ 阶段完成！已自动推进到「${nextStage.name}」。`);
               } else {
                 addMessage('assistant', '🎉 所有阶段已完成！任务结束。');
               }
@@ -362,31 +471,23 @@ function App() {
             }
             const currentStage = currentTask.stages.find((s) => s.id === currentTask.currentStageId);
             if (currentStage?.status === 'running') {
-              // Complete current and advance
               const updated = await taskManager.completeStage(currentTask.id, currentTask.currentStageId);
               if (updated) {
                 setCurrentTask(updated);
                 taskManager.saveToStorage();
                 const nextStage = updated.stages.find((s) => s.status === 'running');
                 if (nextStage) {
-                  addMessage(
-                    'assistant',
-                    `✅ 阶段完成！已自动推进到「${nextStage.name}」。`
-                  );
+                  addMessage('assistant', `✅ 阶段完成！已自动推进到「${nextStage.name}」。`);
                 } else {
                   addMessage('assistant', '🎉 所有阶段已完成！任务结束。');
                 }
               }
             } else if (currentStage?.status === 'pending') {
-              // Just start it
               const updated = taskManager.startStage(currentTask.id, currentTask.currentStageId);
               if (updated) {
                 setCurrentTask(updated);
                 taskManager.saveToStorage();
-                addMessage(
-                  'assistant',
-                  `🚀 已启动阶段「${currentStage.name}」。`
-                );
+                showStageGuidance(currentStage);
               }
             }
             break;
@@ -398,10 +499,7 @@ function App() {
           }
 
           case 'general_chat': {
-            addMessage(
-              'assistant',
-              intent.response || '收到！有什么我可以帮你的吗？'
-            );
+            addMessage('assistant', intent.response || '收到！有什么我可以帮你的吗？');
             break;
           }
 
@@ -424,10 +522,7 @@ function App() {
             if (updated) {
               setCurrentTask(updated);
               taskManager.saveToStorage();
-              addMessage(
-                'assistant',
-                `⏭️ 已跳转到阶段「${targetStage.name}」。当前阶段：**${targetStage.name}**。`
-              );
+              addMessage('assistant', `⏭️ 已跳转到阶段「${targetStage.name}」。当前阶段：**${targetStage.name}**。`);
             }
             break;
           }
@@ -454,16 +549,36 @@ function App() {
         setChatLoading(false);
       }
     },
-    [currentTask, llmConfig, addMessage, createTaskFromIntent]
+    [currentTask, llmConfig, addMessage, createTaskFromIntent, agentRunning, agentSession]
   );
 
+  /** 显示阶段引导提示 */
+  const showStageGuidance = (stage: import('./services/taskManager').TaskStage) => {
+    addMessage(
+      'assistant',
+      `🚀 已启动阶段「${stage.name}」\n\n**阶段目标**：${stage.description}\n\n📋 **你可以这样操作**：\n1. 直接描述你要做的具体工作（例如"请帮我整理需求文档的框架"），消息会自动转发给 Agent\n2. 切换到 **"Agent 运行"** 标签页启动 Agent，查看执行过程\n3. 切换到 **"Agent 指令"** 标签页查看/复制完整的阶段提示词\n4. 完成后输入 **"完成阶段"** 或点击上方按钮推进到下一阶段`
+    );
+  };
+
   // Stage management callbacks
-  const handleStartStage = (stageId: string) => {
+  const handleStartStage = async (stageId: string) => {
     if (!currentTask) return;
     const updated = taskManager.startStage(currentTask.id, stageId);
-    if (updated) {
-      setCurrentTask(updated);
-      taskManager.saveToStorage();
+    if (!updated) return;
+
+    setCurrentTask(updated);
+    taskManager.saveToStorage();
+    const stage = updated.stages.find((s) => s.id === stageId);
+    if (stage) showStageGuidance(stage);
+
+    // Auto-start agent for external tools
+    try {
+      const cfg = await invoke<{ agent?: { type: string } }>('get_global_config');
+      if (cfg.agent?.type && cfg.agent.type !== 'builtin' && stage) {
+        await doStartAgent(updated, stage);
+      }
+    } catch (err) {
+      console.error('[Cospace] Auto-start agent failed:', err);
     }
   };
 
@@ -489,6 +604,30 @@ function App() {
   };
 
   // Agent runner handlers
+  const doStartAgent = async (task: Task, stage: import('./services/taskManager').TaskStage) => {
+    const cfg = await invoke<{ agent?: { type: string; customCommand?: string }; llm?: LlmConfig }>('get_global_config');
+    const agentConfig = {
+      type: (cfg.agent?.type || 'claude') as 'builtin' | 'claude' | 'codex' | 'custom',
+      customCommand: cfg.agent?.customCommand,
+      llmConfig: cfg.llm && cfg.llm.apiKey ? cfg.llm : undefined,
+    };
+
+    if (agentConfig.type === 'builtin' && !agentConfig.llmConfig?.apiKey) {
+      addMessage('assistant', '请先配置 LLM（侧边栏 → 设置），才能使用内置 Agent 模式。');
+      return;
+    }
+
+    setAgentOutput([]);
+    setAgentKeyInfos([]);
+    setAgentRunning(true);
+    addMessage('system', `正在启动 Agent（${agentConfig.type}）...`);
+
+    const kbResults = await knowledgeBase.searchForTask(task);
+    await agentRunner.startAgent(task, stage, agentConfig, kbResults);
+    setAgentSession(agentRunner.session);
+    addMessage('system', 'Agent 已启动，正在执行任务...');
+  };
+
   const handleStartAgent = async () => {
     if (!currentTask?.currentStageId) {
       addMessage('assistant', '没有正在进行的阶段，请先开始一个阶段。');
@@ -497,29 +636,8 @@ function App() {
     const stage = currentTask.stages.find((s) => s.id === currentTask.currentStageId);
     if (!stage) return;
 
-    // Get agent config from settings
     try {
-      const cfg = await invoke<{ agent?: { type: string; customCommand?: string }; llm?: LlmConfig }>('get_global_config');
-      const agentConfig = {
-        type: (cfg.agent?.type || 'claude') as 'builtin' | 'claude' | 'codex' | 'custom',
-        customCommand: cfg.agent?.customCommand,
-        llmConfig: cfg.llm && cfg.llm.apiKey ? cfg.llm : undefined,
-      };
-
-      if (agentConfig.type === 'builtin' && !agentConfig.llmConfig?.apiKey) {
-        addMessage('assistant', '请先配置 LLM（侧边栏 → 设置），才能使用内置 Agent 模式。');
-        return;
-      }
-
-      setAgentOutput([]);
-      setAgentKeyInfos([]);
-      setAgentRunning(true);
-      addMessage('system', `正在启动 Agent（${agentConfig.type}）...`);
-
-      const kbResults = await knowledgeBase.searchForTask(currentTask);
-      await agentRunner.startAgent(currentTask, stage, agentConfig, kbResults);
-      setAgentSession(agentRunner.session);
-      addMessage('system', 'Agent 已启动，正在执行任务...');
+      await doStartAgent(currentTask, stage);
     } catch (err) {
       console.error('[Cospace] Failed to start agent:', err);
       setAgentRunning(false);
@@ -842,6 +960,7 @@ function App() {
                 onSendAgentInput={handleSendAgentInput}
                 historyEntries={historyEntries}
                 onExportTask={handleExportTask}
+                intentMode={intentMode}
               />
             ) : (
               <div className="flex-1 flex items-center justify-center text-gray-500">
