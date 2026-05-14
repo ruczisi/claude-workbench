@@ -1,7 +1,7 @@
 # Cospace v2.0 进度记录
 
 > 最后更新：2026-05-14  
-> 当前版本：v0.5.0-alpha（阶段跳转 + Agent 历史 + 模板展示完成）
+> 当前版本：v0.6.0-alpha（Agent 暂停/恢复 + 响应式布局完成）
 
 ---
 
@@ -34,6 +34,8 @@
 - [x] 阶段快捷跳转（点击阶段导航 + `/stage` 指令 + `jumpToStage`）
 - [x] Agent 会话历史持久化（`.cospace/context.jsonl`）
 - [x] 知识库模板展示（Preview 面板模板列表）
+- [x] Agent 暂停/恢复任务（保留会话 snapshot，可恢复）
+- [x] 响应式布局（移动端 Sidebar 切换，Preview 自适应隐藏）
 - [x] 提示词优化 + Agent 桥接（Phase 3）
 - [x] 任务自动推进（Phase 4）
 - [x] 自定义 workflow 加载（Sidebar 工作流标签 + `workflowManager`）

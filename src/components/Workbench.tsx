@@ -18,10 +18,13 @@ interface WorkbenchProps {
   // Agent runner props
   agentSession?: AgentSession | null;
   agentRunning?: boolean;
+  canResumeAgent?: boolean;
   agentOutput?: string[];
   agentKeyInfos?: AgentKeyInfo[];
   onStartAgent?: () => void;
   onStopAgent?: () => void;
+  onPauseAgent?: () => void;
+  onResumeAgent?: () => void;
   onSendAgentInput?: (input: string) => void;
 }
 
@@ -35,10 +38,13 @@ export default function Workbench({
   chatLoading = false,
   agentSession = null,
   agentRunning = false,
+  canResumeAgent = false,
   agentOutput = [],
   agentKeyInfos = [],
   onStartAgent,
   onStopAgent,
+  onPauseAgent,
+  onResumeAgent,
   onSendAgentInput,
 }: WorkbenchProps) {
   const [activePanel, setActivePanel] = useState<'chat' | 'agent-run' | 'agent-ctx'>('chat');
@@ -237,10 +243,13 @@ export default function Workbench({
           <AgentOutputPanel
             session={agentSession}
             isRunning={agentRunning}
+            canResume={canResumeAgent}
             outputHistory={agentOutput}
             keyInfos={agentKeyInfos}
             onStart={onStartAgent || (() => {})}
             onStop={onStopAgent || (() => {})}
+            onPause={onPauseAgent}
+            onResume={onResumeAgent}
             onSendInput={onSendAgentInput}
           />
         )}

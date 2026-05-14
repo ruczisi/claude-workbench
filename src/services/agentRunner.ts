@@ -53,6 +53,14 @@ export class AgentRunner {
   private onKeyInfoCallback: ((info: AgentKeyInfo) => void) | null = null;
   private onExitCallback: ((code: number) => void) | null = null;
 
+  /** Snapshot for pause/resume */
+  private pausedSnapshot: {
+    task: Task;
+    stage: TaskStage;
+    agentConfig: AgentConfig;
+    knowledgeResults?: KnowledgeResult[];
+  } | null = null;
+
   /** 是否已有活跃会话 */
   get isRunning(): boolean {
     return this.currentSession?.isRunning ?? false;
@@ -110,6 +118,9 @@ export class AgentRunner {
       optimizedPrompt,
       isRunning: true,
     };
+
+    // Save snapshot for pause/resume
+    this.pausedSnapshot = { task, stage, agentConfig, knowledgeResults };
 
     this.outputBuffer = '';
 
@@ -174,6 +185,29 @@ export class AgentRunner {
 
     this.currentSession = null;
     this.outputBuffer = '';
+  }
+
+  /** 暂停 Agent 会话（保留 snapshot，可恢复） */
+  async pauseAgent(): Promise<void> {
+    if (!this.currentSession?.isRunning) return;
+    const { task, stage } = this.currentSession;
+    await contextHistory.logSystem(task.basePath, `Agent session paused: ${stage.name}`);
+    await this.stopAgent();
+  }
+
+  /** 恢复 Agent 会话（基于 snapshot 重新启动） */
+  async resumeAgent(): Promise<void> {
+    if (!this.pausedSnapshot) {
+      throw new Error('没有可恢复的 Agent 会话');
+    }
+    const { task, stage, agentConfig, knowledgeResults } = this.pausedSnapshot;
+    await contextHistory.logSystem(task.basePath, `Agent session resumed: ${stage.name}`);
+    await this.startAgent(task, stage, agentConfig, knowledgeResults);
+  }
+
+  /** 检查是否有可恢复的会话 */
+  get canResume(): boolean {
+    return this.pausedSnapshot !== null;
   }
 
   /**

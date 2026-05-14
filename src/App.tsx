@@ -43,6 +43,18 @@ function App() {
   const [knowledgeBasePath, setKnowledgeBasePath] = useState<string | null>(null);
   const [kbStats, setKbStats] = useState<{ total: number }>({ total: 0 });
 
+  // Responsive layout state
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = windowWidth < 768;
+  const showPreview = windowWidth >= 1024;
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const {
     startupPhase,
     setStartupPhase,
@@ -454,6 +466,29 @@ function App() {
     addMessage('system', 'Agent 已停止');
   };
 
+  const handlePauseAgent = async () => {
+    try {
+      await agentRunner.pauseAgent();
+      setAgentRunning(false);
+      setAgentSession(null);
+      addMessage('system', 'Agent 已暂停，可随时恢复');
+    } catch (err) {
+      console.error('[Cospace] Failed to pause agent:', err);
+    }
+  };
+
+  const handleResumeAgent = async () => {
+    try {
+      await agentRunner.resumeAgent();
+      setAgentRunning(true);
+      setAgentSession(agentRunner.session);
+      addMessage('system', 'Agent 已恢复');
+    } catch (err) {
+      console.error('[Cospace] Failed to resume agent:', err);
+      addMessage('assistant', `恢复 Agent 失败: ${err}`);
+    }
+  };
+
   const handleSendAgentInput = async (input: string) => {
     try {
       await agentRunner.sendInput(input);
@@ -638,20 +673,36 @@ function App() {
       {/* Main app content */}
       {startupPhase === 'ready' && (
         <div className="flex-1 flex overflow-hidden">
-          <Sidebar
-            onCreateTask={handleCreateDemoTask}
-            watchedPath={watchedPath}
-            currentTask={currentTask}
-            onSelectTask={handleSelectTask}
-            onDeleteTask={handleDeleteTask}
-            workflows={workflows}
-            onUseWorkflow={handleUseWorkflow}
-            knowledgeBasePath={knowledgeBasePath}
-            kbStats={kbStats}
-            onSelectKnowledgeBase={handleSelectKnowledgeBase}
-          />
+          {/* Mobile sidebar toggle */}
+          {isMobile && (
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="absolute top-2 left-2 z-50 p-2 bg-gray-800 rounded text-gray-300 hover:text-white"
+              title={sidebarOpen ? '隐藏侧边栏' : '显示侧边栏'}
+            >
+              {sidebarOpen ? '◀' : '▶'}
+            </button>
+          )}
 
-          <div className="flex-1 flex flex-col border-x border-gray-700">
+          {/* Sidebar */}
+          {(!isMobile || sidebarOpen) && (
+            <div className={`${isMobile ? 'absolute z-40 h-full' : ''} flex-shrink-0`}>
+              <Sidebar
+                onCreateTask={handleCreateDemoTask}
+                watchedPath={watchedPath}
+                currentTask={currentTask}
+                onSelectTask={handleSelectTask}
+                onDeleteTask={handleDeleteTask}
+                workflows={workflows}
+                onUseWorkflow={handleUseWorkflow}
+                knowledgeBasePath={knowledgeBasePath}
+                kbStats={kbStats}
+                onSelectKnowledgeBase={handleSelectKnowledgeBase}
+              />
+            </div>
+          )}
+
+          <div className="flex-1 flex flex-col border-x border-gray-700 min-w-0">
             {showWorkbench && currentTask ? (
               <Workbench
                 task={currentTask}
@@ -675,6 +726,9 @@ function App() {
                 agentKeyInfos={agentKeyInfos}
                 onStartAgent={handleStartAgent}
                 onStopAgent={handleStopAgent}
+                onPauseAgent={handlePauseAgent}
+                onResumeAgent={handleResumeAgent}
+                canResumeAgent={agentRunner.canResume}
                 onSendAgentInput={handleSendAgentInput}
               />
             ) : (
@@ -694,7 +748,7 @@ function App() {
             )}
           </div>
 
-          <Preview task={currentTask} />
+          {showPreview && <Preview task={currentTask} />}
         </div>
       )}
     </div>
